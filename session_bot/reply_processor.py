@@ -268,6 +268,7 @@ class Reply_processor(dynamic_time_manager):
                     data["Settled"] = instant
                     data["Analysis"] = hla_analysis
                     add_data(data)
+                    self.notify_limit_once(contact)
                     if instant:
                         self.send_instant_table(contact, market, result_list)
                     return msg,0

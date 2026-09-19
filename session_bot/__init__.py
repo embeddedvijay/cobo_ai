@@ -40,11 +40,20 @@ class Session(Reply_processor, Scheduler):
         # Direct YAML config replaces the old hard-coded remote Config database.
         self.in_contacts = [_contact_name(contact) for contact in session_data.get("in_contacts", [])]
         self.customer_contacts = list(self.in_contacts)
+        # Full per-input-group rules come from the desktop JSON. The old
+        # "name ^ LD" array remains supported as a fallback only.
+        self.contact_rules = session_data.get("contact_rules", {}) or {}
         self.contact_director = {}
         for contact in session_data.get("in_contacts", []):
             name = _contact_name(contact)
             rate = str(contact).split("^", 1)[1].strip() if "^" in str(contact) else "100"
-            self.contact_director[name] = {"LD": int(rate), "Forward": "Forward Others", "Table": "Table Others"}
+            rule = dict(self.contact_rules.get(name, {}) or {})
+            rule.setdefault("LD", int(rate))
+            rule.setdefault("Limit", 0)
+            rule.setdefault("instant_cutting", False)
+            rule.setdefault("Director", {})
+            rule.setdefault("win_rate", {})
+            self.contact_director[name] = rule
 
         self.out_contacts = {}
         for section, mapping in session_data.get("out_contacts", {}).items():
@@ -86,6 +95,67 @@ class Session(Reply_processor, Scheduler):
         Reply_processor.__init__(self)
         Scheduler.__init__(self)
         print(f"[{self.session_name}] legacy processor ready; inputs={self.in_contacts}", flush=True)
+
+    def rule_for(self, contact: str) -> dict:
+        return self.contact_director.get(_contact_name(contact), {})
+
+    def _base_market(self, market: str) -> str:
+        return str(market).rsplit("_", 1)[0]
+
+    def director_target(self, contact: str, market: str, kind: str) -> str | None:
+        director = self.rule_for(contact).get("Director", {})
+        row = director.get(self._base_market(market), {})
+        return row.get(kind)
+
+    def table_routes_for_market(self, market: str) -> dict:
+        """Output target -> only its customers, so LD never leaks across groups."""
+        routes = {}
+        for contact in self.customer_contacts:
+            target = self.director_target(contact, market, "table")
+            if target:
+                routes.setdefault(str(target), []).append(contact)
+        return routes
+
+    def is_instant_cutting(self, contact: str) -> bool:
+        return bool(self.rule_for(contact).get("instant_cutting", False))
+
+    def format_ld_table(self, market: str, result_list: list, ld_value) -> tuple[str, int, dict]:
+        # Match the legacy scheduler rounding: int(amount * LD / 100).
+        try:
+            rate = int(ld_value)
+        except (TypeError, ValueError):
+            rate = 100
+        rows, bets, total = [], {}, 0
+        for row in result_list or []:
+            if not isinstance(row, (list, tuple)) or len(row) < 2:
+                continue
+            try:
+                amount = int(row[-1])
+            except (TypeError, ValueError):
+                continue
+            cut = int(amount * rate / 100)
+            if cut <= 0:
+                continue
+            key = "=".join(str(part) for part in row[:-1])
+            rows.append(f"*{key}={cut}*")
+            bets[key] = bets.get(key, 0) + cut
+            total += cut
+        return "\n".join([f"*{market}*", *rows, f"*TOTAL={total}*"]), total, bets
+
+    def send_instant_table(self, contact: str, market: str, result_list: list) -> bool:
+        target = self.director_target(contact, market, "table")
+        if not target:
+            print(f"No table Director target for {contact}/{market}; immediate table skipped", flush=True)
+            return False
+        text, total, bets = self.format_ld_table(market, result_list, self.rule_for(contact).get("LD", 100))
+        if total <= 0:
+            return False
+        self.send_message_to(
+            target, text, market=market,
+            settlement_payload={"bets": bets, "total_play": total, "source_contact": contact},
+            priority=100,
+        )
+        return True
 
     def send_message_to(self, number, message: str, *, market: str | None = None, settlement_payload: dict | None = None, priority: int = 50, business_date: str | None = None) -> None:
         """Legacy forward/table/play/win output -> durable Baileys outbox."""

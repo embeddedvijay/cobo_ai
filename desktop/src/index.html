@@ -3,39 +3,48 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Cobo AI</title>
+  <title>Cobo</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand"><span>♛</span><div><b id="clientName">Cobo AI</b><small id="clientEmail">Local desktop control</small></div></div>
+      <div class="brand"><span>♛</span><div><b id="clientName">Workspace</b><small>Local workspace</small></div></div>
       <nav>
-        <button class="nav active" data-page="launch">◈ <span>Bot Control</span></button>
-        <button class="nav" data-page="dashboard">▦ <span>Results &amp; Markets</span></button>
-        <button class="nav" data-page="transactions">▤ <span>Transactions</span></button>
+        <button class="nav active" data-page="dashboard">▦ <span>Dashboard</span></button>
+        <button class="nav" data-page="results">▤ <span>Results &amp; Markets</span></button>
+        <button class="nav" data-page="transactions">◫ <span>Transactions</span></button>
         <button class="nav" data-page="config">⚙ <span>Configuration</span></button>
       </nav>
-      <div class="status-card"><b>Status</b><p><i id="botDot"></i> Bot <span id="botState">Stopped</span></p><p><i class="ok"></i> Local Config <span id="configState">Not loaded</span></p></div>
-      <div class="side-actions"><button id="chooseBot">Choose Bot Folder</button><button id="stopBot" class="danger">Stop Bot</button></div>
+      <div class="status-card"><b>Service Status</b><p><i id="botDot"></i><span id="botState">Stopped</span></p><p><i class="ok"></i> Workspace ready</p></div>
+      <div class="side-actions"><button id="launchService" class="primary">▶ Start Service</button><button id="chooseBot">▣ Choose Workspace Folder</button><button id="stopBot" class="danger">■ Stop Service</button></div>
     </aside>
     <main>
-      <section id="launch" class="page active launch-page">
-        <div class="launch-panel"><p class="eyebrow">LOCAL BAILEYS CONTROL</p><h1>Launch<br/>Bot Control</h1><p id="launchDetail">Import your JSON configuration, then select the folder that contains the npm bot.</p><button class="primary big" id="launchBot">▶ Launch Bot Control</button><button class="secondary" data-goto="config">⚙ Configure Bot Control</button><div class="tips">💡 Use one WhatsApp account per session<br/>📌 Group names must match the selected JSON configuration<br/>🔒 Login credentials stay only on this device</div></div>
-      </section>
-      <section id="dashboard" class="page">
-        <header><div><p class="eyebrow">TODAY'S CONTROL BOARD</p><h2>Customer, market &amp; session overview</h2></div><button class="primary" id="dashboardLaunch">Launch Bot</button></header>
+      <section id="dashboard" class="page active">
+        <header><div><p class="eyebrow">BUSINESS OVERVIEW</p><h1>Today at a glance</h1><p class="subtitle">Customer, market and service activity.</p></div><button class="primary" data-goto="config">Open Configuration</button></header>
         <div id="metricCards" class="metric-grid"></div>
-        <div class="content-grid"><article class="panel"><div class="panel-title"><h3>Configured customers</h3><span id="contactCount">0 contacts</span></div><div id="customerList" class="customer-list"></div></article><article class="panel"><div class="panel-title"><h3>Today's markets</h3><span id="marketCount">0 markets</span></div><div id="marketList" class="market-list"></div></article><article class="panel log-panel"><div class="panel-title"><h3>Bot console</h3><span>live</span></div><pre id="logs">Select JSON config, choose bot folder, then launch.</pre></article></div>
-      </section>
-      <section id="transactions" class="page"><header><div><p class="eyebrow">LOCAL VIEW</p><h2>Transactions</h2></div></header><div class="panel empty"><h3>Bot transaction API connection</h3><p>This desktop app launches the local npm bot. Live transactions can be connected to its FastAPI/MongoDB API in the next phase; config, bot state and process logs are already local.</p></div></section>
-      <section id="config" class="page"><header><div><p class="eyebrow">JSON CONFIGURATION</p><h2>Client and group configuration</h2></div><div class="header-actions"><button class="secondary" id="importConfig">Import JSON</button><button class="primary" id="saveConfig">Save JSON</button></div></header>
-        <div class="config-toolbar"><div id="configSummary">No JSON configuration imported.</div><button class="primary" id="saveRestart">Save &amp; Restart Bot</button></div>
-        <div class="manager-grid">
-          <article class="panel group-manager"><div class="panel-title"><h3>Input groups</h3><button class="primary small" id="addGroup">＋ Add Input Group</button></div><p class="muted">Default routes apply to every market. Add an override only when that market goes to another group.</p><div id="groupManager"></div></article>
-          <article class="panel market-manager"><div class="panel-title"><h3>Markets &amp; timings</h3><button class="secondary small" id="addMarket">＋ Add Market</button></div><p class="muted">Each row is one OP or CL timing. Start/end and working-day are editable.</p><div id="marketManager"></div></article>
+        <div class="content-grid">
+          <article class="panel"><div class="panel-title"><h3>Input groups</h3><span id="contactCount">0 active</span></div><div id="customerList" class="customer-list"></div></article>
+          <article class="panel"><div class="panel-title"><h3>Market timings</h3><span id="marketCount">0 markets</span></div><div id="marketList" class="market-list"></div></article>
+          <article class="panel log-panel"><div class="panel-title"><h3>Service activity</h3><span>live</span></div><pre id="logs">Workspace is ready. Choose the workspace folder, then start the service.</pre></article>
         </div>
-        <details class="panel json-details"><summary>JSON Preview / Advanced edit</summary><label for="jsonEditor">JSON data</label><textarea id="jsonEditor" spellcheck="false" placeholder="Import desktop/config.example.json to edit it here."></textarea></details><p id="saveMessage" class="save-message"></p>
+      </section>
+
+      <section id="results" class="page"><header><div><p class="eyebrow">RESULTS &amp; MARKETS</p><h1>Market view</h1></div><button class="primary" data-goto="config">Edit Timings</button></header><div class="panel empty"><h3>Live market data</h3><p>Today’s market and result details will appear here while the service is running.</p></div></section>
+      <section id="transactions" class="page"><header><div><p class="eyebrow">TRANSACTIONS</p><h1>Customer activity</h1></div></header><div class="panel empty"><h3>Transaction history</h3><p>Saved customer entries and output records will appear here.</p></div></section>
+
+      <section id="config" class="page">
+        <header><div><p class="eyebrow">CONFIGURATION</p><h1>Manage markets and customer rules</h1><p class="subtitle">Standard market timings are already loaded. Edit and save only when needed.</p></div><button class="primary" id="saveRestart">Save Changes &amp; Restart</button></header>
+        <div class="tabs"><button class="tab active" data-tab="timings">◷ Market Timings</button><button class="tab" data-tab="groups">♟ Input Groups</button></div>
+        <section class="tab-page active" id="timings">
+          <div class="config-grid">
+            <article class="panel"><div class="panel-title"><h3>Market Timings</h3><button class="secondary small" id="addMarket">＋ Add Market</button></div><p class="muted">Open and close timings are editable.</p><div id="marketManager"></div></article>
+            <article class="panel info-panel"><h3>Save changes</h3><p>Changes apply to this workspace. Existing standard timings remain available until you save an edit.</p><button class="primary full" id="saveConfig">Save Changes</button><p id="saveMessage" class="save-message"></p></article>
+          </div>
+        </section>
+        <section class="tab-page" id="groups">
+          <article class="panel group-manager"><div class="panel-title"><h3>Input Group Rules</h3><button class="primary small" id="addGroup">＋ Add Input Group</button></div><p class="muted">Add the exact customer group name. Set limits, rates, and delivery destinations inside each customer card.</p><div id="groupManager"></div></article>
+        </section>
       </section>
     </main>
   </div>

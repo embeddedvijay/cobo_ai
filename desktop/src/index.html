@@ -33,15 +33,14 @@
       <section id="transactions" class="page"><header><div><p class="eyebrow">TRANSACTIONS</p><h1>Customer activity</h1></div></header><div class="panel empty"><h3>Transaction history</h3><p>Saved customer entries and output records will appear here.</p></div></section>
       <section id="config" class="page active">
         <header class="premium-header">
-          <div><p class="eyebrow">CRM CONFIGURATION</p><h1>Configuration</h1><p class="subtitle">Manage markets, timings and customer routing</p></div>
+          <div><p class="eyebrow">WORKSPACE SETTINGS</p><h1>Configuration</h1><p class="subtitle">Manage market timings and customer delivery rules</p></div>
           <div class="header-note">ⓘ Standard market timings are already loaded. Edit and save only if needed.</div>
           <div class="top-date">● System Online&nbsp;&nbsp; | &nbsp;&nbsp;Today</div>
         </header>
         <div class="premium-tabs">
-          <button class="control-tab active" data-tab="timings">⚙ General</button>
           <button class="control-tab active-tab" data-tab="timings">◷ Market Timings</button>
           <button class="control-tab" data-tab="groups">♟ Input Groups</button>
-          <button class="control-tab" data-tab="delivery">⌘ Output Destinations</button>
+          <button class="control-tab" data-tab="delivery">⌘ Delivery</button>
         </div>
         <section class="tab-page active" id="timings">
           <div class="premium-config-grid">
@@ -53,7 +52,7 @@
             <aside id="marketEditor" class="market-edit-panel"></aside>
           </div>
         </section>
-        <section class="tab-page" id="groups"><article class="input-rules-panel"><div class="section-head"><div><h2>♟ Input Groups</h2><p>Configure customer group limits and routing behaviour</p></div><button class="primary" id="addGroupSecondary">＋ Add Input Group</button></div><div id="groupManagerSecondary"></div></article></section>
+        <section class="tab-page" id="groups"><article class="input-rules-panel"><div class="section-head"><div><h2>♟ Input Groups</h2><p>Configure group limits, market-wise delivery and win rates</p></div><button class="primary" id="addGroupSecondary">＋ Add Input Group</button></div><div id="groupManagerSecondary"></div></article></section>
         <section class="tab-page" id="delivery"><article class="delivery-empty"><div class="delivery-icon">↗</div><h2>Output Destinations</h2><p>Select an input group to manage its default and market-wise destinations.</p><button class="primary" data-tab-target="groups">Open Input Groups</button></article></section>
       </section>
     </main>
@@ -62,7 +61,7 @@
   <dialog id="groupDialog" class="form-dialog">
     <form id="groupForm">
       <div class="dialog-head"><div><p class="eyebrow">NEW INPUT GROUP</p><h2>Add customer group</h2></div><button type="button" class="icon" data-close="groupDialog">×</button></div>
-      <label>Customer group name<input name="name" required placeholder="Exact WhatsApp group name"></label>
+      <label>Customer group name<input name="name" required placeholder="Exact group name"></label>
       <div class="field-grid"><label>LD %<input name="ld" type="number" min="0" max="100" value="100" required></label><label>Limit (₹)<input name="limit" type="number" min="0" value="0" required></label><label class="toggle-field">Instant Cutting<input name="instant" type="checkbox"></label></div>
       <fieldset><legend>Default destinations</legend><div class="field-grid two"><label>All Table<input name="allTable" placeholder="Output group name"></label><label>All Forward<input name="allForward" placeholder="Output group name"></label></div></fieldset>
       <fieldset><legend>Win Rate</legend><div class="rate-grid"><label>ANK<input name="ank" type="number" value="9.5"></label><label>Jodi<input name="jodi" type="number" value="95"></label><label>SP<input name="sp" type="number" value="150"></label><label>DP<input name="dp" type="number" value="300"></label><label>TP<input name="tp" type="number" value="600"></label><label>FS<input name="fs" type="number" value="10000"></label><label>HS<input name="hs" type="number" value="1000"></label><label>Commission %<input name="commission" type="number" value="0"></label></div></fieldset>

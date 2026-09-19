@@ -22,11 +22,18 @@ function saveState(next) {
 function emit(channel, payload) { windowRef?.webContents.send(channel, payload); }
 
 function normaliseConfig(value) {
-  const config = Array.isArray(value) ? value[0] : value;
-  if (!config || typeof config !== 'object') throw new Error('JSON object or one-item JSON array is required.');
-  if (!config.client_name) throw new Error('client_name is required.');
-  if (!Array.isArray(config.sessions)) throw new Error('sessions array is required.');
-  return config;
+  const source = Array.isArray(value) ? value[0] : value;
+  if (!source || typeof source !== 'object') throw new Error('JSON object or one-item JSON array is required.');
+  if (!source.client_name) throw new Error('client_name is required.');
+
+  // New desktop format is flat: one owner/client and its input-group rules.
+  // Older exported files keep working by reading their first sessions[0].
+  const legacy = Array.isArray(source.sessions) ? source.sessions[0] || {} : {};
+  const inContacts = source.in_contacts || legacy.in_contacts;
+  if (!inContacts || typeof inContacts !== 'object' || Array.isArray(inContacts)) {
+    throw new Error('in_contacts object is required. Use WhatsApp group names as its keys.');
+  }
+  return { ...source, in_contacts: inContacts };
 }
 
 function loadConfig(filePath) {
@@ -36,32 +43,14 @@ function loadConfig(filePath) {
 
 function runtimeConfigFromJson(value) {
   const client = normaliseConfig(value);
-  const sessionName = client.session_name || 'Session ONE';
-  const sessions = (client.sessions || []).map((source, index) => {
-    const contacts = source.in_contacts && typeof source.in_contacts === 'object' && !Array.isArray(source.in_contacts)
-      ? Object.entries(source.in_contacts).map(([name, detail]) => `${name} ^ ${detail?.LD || 100}`)
-      : (source.in_contacts || []);
-    const outputGroups = new Set();
-    for (const detail of Object.values(source.in_contacts || {})) {
-      for (const director of Object.values(detail?.Director || {})) {
-        if (director?.table) outputGroups.add(String(director.table));
-        if (director?.fast_forward) outputGroups.add(String(director.fast_forward));
-      }
+  const outputGroups = new Set();
+  for (const detail of Object.values(client.in_contacts || {})) {
+    for (const director of Object.values(detail?.Director || {})) {
+      if (director?.table) outputGroups.add(String(director.table));
+      if (director?.fast_forward) outputGroups.add(String(director.fast_forward));
     }
-    const outputs = [...outputGroups];
-    return {
-      session_name: source.session_name || (index ? `${sessionName} ${index + 1}` : sessionName),
-      market_timings: client.fixed_market_time || {},
-      in_contacts: contacts,
-      in_channels: source.in_channels || [],
-      processing: { trigger_contains: 'last', quote_reply: true, max_parallel_sources: 1 },
-      out_contacts: {
-        fast_forward: { other: outputs },
-        table: { other: outputs }
-      },
-      scheduler: { jobs: [] }
-    };
-  });
+  }
+  const outputs = [...outputGroups];
   return {
     whatsapp: {
       auth_dir: client.whatsapp?.auth_dir || './auth_info/desktop',
@@ -76,7 +65,22 @@ function runtimeConfigFromJson(value) {
       client_name: client.client_name,
       fixed_market_time: 'desktop',
       dynamic_timing: client.dynamic_timing || {},
-      sessions
+      // Internal bridge key only. It is not part of the user's JSON/UI.
+      sessions: [{
+        session_name: '_runtime',
+        market_timings: client.fixed_market_time || {},
+        contact_rules: client.in_contacts || {},
+        in_contacts: Object.entries(client.in_contacts || {}).map(([name, detail]) => `${name} ^ ${detail?.LD ?? 100}`),
+        in_channels: client.in_channels || [],
+        processing: { trigger_contains: 'last', quote_reply: true, max_parallel_sources: 1 },
+        out_contacts: {
+          // Scheduler still needs a fallback target while it creates jobs.
+          // Actual target and customer list are selected from Director per market.
+          fast_forward: { other: outputs },
+          table: { other: outputs }
+        },
+        scheduler: { jobs: [] }
+      }]
     }]
   };
 }
@@ -91,12 +95,10 @@ function writeRuntimeConfig(configPath) {
 function configSummary(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return null;
   const { config } = loadConfig(filePath);
-  const sessions = config.sessions || [];
-  const contacts = sessions.flatMap(item => Object.keys(item.in_contacts || {}));
+  const contacts = Object.keys(config.in_contacts || {});
   return {
     filePath,
     clientName: config.client_name,
-    sessionNames: sessions.map(item => item.session_name || 'Session'),
     contactCount: contacts.length,
     marketCount: Object.keys(config.fixed_market_time || {}).length,
     config

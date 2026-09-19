@@ -176,19 +176,47 @@ $('#marketManager').addEventListener('click', event => {
   const line = event.target.closest('.timing-row');
   if (line && event.target.dataset.action === 'delete-market') mutate(next => delete next.fixed_market_time[line.dataset.marketKey]);
 });
-$('#addGroup').addEventListener('click', () => {
-  const name = prompt('Customer group name'); if (!name) return;
+$('#addGroup').addEventListener('click', () => $('#groupDialog').showModal());
+$('#addMarket').addEventListener('click', () => $('#marketDialog').showModal());
+document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => $('#' + button.dataset.close).close()));
+$('#groupForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const data = new FormData(event.currentTarget);
+  const name = String(data.get('name')).trim();
+  if (!name) return;
   mutate(next => {
     next.in_contacts ||= {};
-    next.in_contacts[name.trim()] = { LD: 100, Limit: 0, instant_cutting: false, Director: { all_table: '', all_fast_forward: '', market_overrides: {} }, win_rate: { ANK: 9.5, Jodi: 95, SP: 150, DP: 300, TP: 600, FS: 10000, HS: 1000, Commission: 0 } };
+    next.in_contacts[name] = {
+      LD: Number(data.get('ld') || 100),
+      Limit: Number(data.get('limit') || 0),
+      instant_cutting: data.get('instant') === 'on',
+      Director: { all_table: String(data.get('allTable') || '').trim(), all_fast_forward: String(data.get('allForward') || '').trim(), market_overrides: {} },
+      win_rate: {
+        ANK: Number(data.get('ank') || 0), Jodi: Number(data.get('jodi') || 0),
+        SP: Number(data.get('sp') || 0), DP: Number(data.get('dp') || 0),
+        TP: Number(data.get('tp') || 0), FS: Number(data.get('fs') || 0),
+        HS: Number(data.get('hs') || 0), Commission: Number(data.get('commission') || 0)
+      }
+    };
   });
+  event.currentTarget.reset();
+  $('#groupDialog').close();
 });
-$('#addMarket').addEventListener('click', () => {
-  const name = prompt('Market name, for example KALYAN_DAY_OP'); if (!name) return;
+$('#marketForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const data = new FormData(event.currentTarget);
+  const name = String(data.get('name')).trim();
+  if (!name) return;
   mutate(next => {
     next.fixed_market_time ||= {};
-    next.fixed_market_time[name.trim()] = [{ hour: 0, minute: 0, second: 0 }, 6, { hour: 0, minute: 0, second: 0 }];
+    next.fixed_market_time[name] = [
+      { hour: Number(data.get('startHour') || 0), minute: Number(data.get('startMinute') || 0), second: 0 },
+      Number(data.get('days') || 0),
+      { hour: Number(data.get('endHour') || 0), minute: Number(data.get('endMinute') || 0), second: 0 }
+    ];
   });
+  event.currentTarget.reset();
+  $('#marketDialog').close();
 });
 async function chooseWorkspace() {
   try { const state = await window.cobo.chooseBotDirectory(); log(state.botDirectory ? `Workspace folder: ${state.botDirectory}` : 'Workspace folder unchanged.'); }

@@ -6,7 +6,7 @@ import time
 from bson.objectid import ObjectId
 import sys
 
-from .config import send_data,connect_to_cluster
+from .config import send_data, connect_to_cluster, load_runtime_config
 
 def get_business_date(now=None):
     """Dynamic trading-date collection; configured rollover protects Main Bazar.
@@ -17,8 +17,7 @@ def get_business_date(now=None):
     now = now or datetime.datetime.now()
     rollover = "01:30"
     try:
-        with open("config.yaml", "r", encoding="utf-8") as handle:
-            rollover = str((yaml.safe_load(handle) or {}).get("business_day_rollover", rollover))
+        rollover = str(load_runtime_config().get("business_day_rollover", rollover))
         hour, minute = (int(part) for part in rollover.split(":", 1))
         cutover = datetime.time(hour, minute)
     except Exception:
@@ -48,8 +47,7 @@ import yaml
 
 def get_contact_cutting(client_name:str)->dict:
     contact_cutting = {}
-    with open('config.yaml','r') as file:
-        config = yaml.safe_load(file)
+    config = load_runtime_config()
 
     for client in config['clients']:
         if client_name != client['client_name']:

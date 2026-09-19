@@ -2,7 +2,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('cobo', {
   state: () => ipcRenderer.invoke('app:state'),
-  chooseConfig: () => ipcRenderer.invoke('config:choose'),
   loadConfig: () => ipcRenderer.invoke('config:load'),
   saveConfig: raw => ipcRenderer.invoke('config:save', raw),
   chooseBotDirectory: () => ipcRenderer.invoke('bot:choose-directory'),

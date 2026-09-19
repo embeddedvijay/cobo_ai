@@ -34,6 +34,60 @@ function loadConfig(filePath) {
   return { raw, config: normaliseConfig(JSON.parse(raw)) };
 }
 
+function runtimeConfigFromJson(value) {
+  const client = normaliseConfig(value);
+  const sessionName = client.session_name || 'Session ONE';
+  const sessions = (client.sessions || []).map((source, index) => {
+    const contacts = source.in_contacts && typeof source.in_contacts === 'object' && !Array.isArray(source.in_contacts)
+      ? Object.entries(source.in_contacts).map(([name, detail]) => `${name} ^ ${detail?.LD || 100}`)
+      : (source.in_contacts || []);
+    const outputGroups = new Set();
+    for (const detail of Object.values(source.in_contacts || {})) {
+      for (const director of Object.values(detail?.Director || {})) {
+        if (director?.table) outputGroups.add(String(director.table));
+        if (director?.fast_forward) outputGroups.add(String(director.fast_forward));
+      }
+    }
+    const outputs = [...outputGroups];
+    return {
+      session_name: source.session_name || (index ? `${sessionName} ${index + 1}` : sessionName),
+      market_timings: client.fixed_market_time || {},
+      in_contacts: contacts,
+      in_channels: source.in_channels || [],
+      processing: { trigger_contains: 'last', quote_reply: true, max_parallel_sources: 1 },
+      out_contacts: {
+        fast_forward: { other: outputs },
+        table: { other: outputs }
+      },
+      scheduler: { jobs: [] }
+    };
+  });
+  return {
+    whatsapp: {
+      auth_dir: client.whatsapp?.auth_dir || './auth_info/desktop',
+      backend_url: client.whatsapp?.backend_url || 'http://127.0.0.1:8015',
+      reconnect_delay_ms: 2500,
+      outbox_poll_ms: 500,
+      max_parallel_jids: 1
+    },
+    business_day_rollover: client.business_day_rollover || '01:30',
+    mongo: client.mongo || { url: 'mongodb://127.0.0.1:27017/', database: 'Market' },
+    clients: [{
+      client_name: client.client_name,
+      fixed_market_time: 'desktop',
+      dynamic_timing: client.dynamic_timing || {},
+      sessions
+    }]
+  };
+}
+
+function writeRuntimeConfig(configPath) {
+  const uploaded = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  const runtimePath = path.join(path.dirname(configPath), '.cobo-runtime.json');
+  fs.writeFileSync(runtimePath, JSON.stringify(runtimeConfigFromJson(uploaded), null, 2));
+  return runtimePath;
+}
+
 function configSummary(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return null;
   const { config } = loadConfig(filePath);
@@ -119,9 +173,10 @@ ipcMain.handle('bot:start', () => {
   if (!state.configPath || !fs.existsSync(state.configPath)) throw new Error('Import and save a JSON config first.');
   if (!state.botDirectory || !fs.existsSync(path.join(state.botDirectory, 'package.json'))) throw new Error('Choose the npm bot folder first.');
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const runtimeConfigPath = writeRuntimeConfig(state.configPath);
   botProcess = spawn(npm, ['start'], {
     cwd: state.botDirectory,
-    env: { ...process.env, COBO_CONFIG_PATH: state.configPath, COBO_CONFIG_FORMAT: 'json' },
+    env: { ...process.env, COBO_CONFIG_PATH: state.configPath, COBO_RUNTIME_CONFIG_PATH: runtimeConfigPath, COBO_CONFIG_FORMAT: 'json' },
     windowsHide: true
   });
   botProcess.stdout.on('data', data => emit('bot-log', data.toString()));

@@ -29,25 +29,43 @@
           <article class="panel log-panel"><div class="panel-title"><h3>Service activity</h3><span>live</span></div><pre id="logs">Workspace is ready. Choose the workspace folder, then start the service.</pre></article>
         </div>
       </section>
-
       <section id="results" class="page"><header><div><p class="eyebrow">RESULTS &amp; MARKETS</p><h1>Market view</h1></div><button class="primary" data-goto="config">Edit Timings</button></header><div class="panel empty"><h3>Live market data</h3><p>Today’s market and result details will appear here while the service is running.</p></div></section>
       <section id="transactions" class="page"><header><div><p class="eyebrow">TRANSACTIONS</p><h1>Customer activity</h1></div></header><div class="panel empty"><h3>Transaction history</h3><p>Saved customer entries and output records will appear here.</p></div></section>
-
       <section id="config" class="page">
         <header><div><p class="eyebrow">CONFIGURATION</p><h1>Manage markets and customer rules</h1><p class="subtitle">Standard market timings are already loaded. Edit and save only when needed.</p></div><button class="primary" id="saveRestart">Save Changes &amp; Restart</button></header>
         <div class="tabs"><button class="tab active" data-tab="timings">◷ Market Timings</button><button class="tab" data-tab="groups">♟ Input Groups</button></div>
         <section class="tab-page active" id="timings">
           <div class="config-grid">
-            <article class="panel"><div class="panel-title"><h3>Market Timings</h3><button class="secondary small" id="addMarket">＋ Add Market</button></div><p class="muted">Open and close timings are editable.</p><div id="marketManager"></div></article>
-            <article class="panel info-panel"><h3>Save changes</h3><p>Changes apply to this workspace. Existing standard timings remain available until you save an edit.</p><button class="primary full" id="saveConfig">Save Changes</button><p id="saveMessage" class="save-message"></p></article>
+            <article class="panel"><div class="panel-title"><h3>Market Timings</h3><button class="secondary small" id="addMarket">＋ Add Market</button></div><p class="muted">Standard market list is already loaded. Edit an existing row, or add a new market.</p><div id="marketManager"></div></article>
+            <article class="panel info-panel"><h3>Save changes</h3><p>Changes apply to this workspace.</p><button class="primary full" id="saveConfig">Save Changes</button><p id="saveMessage" class="save-message"></p></article>
           </div>
         </section>
         <section class="tab-page" id="groups">
-          <article class="panel group-manager"><div class="panel-title"><h3>Input Group Rules</h3><button class="primary small" id="addGroup">＋ Add Input Group</button></div><p class="muted">Add the exact customer group name. Set limits, rates, and delivery destinations inside each customer card.</p><div id="groupManager"></div></article>
+          <article class="panel group-manager"><div class="panel-title"><h3>Input Group Rules</h3><button class="primary small" id="addGroup">＋ Add Input Group</button></div><p class="muted">Create each customer group here. No customer is added by default.</p><div id="groupManager"></div></article>
         </section>
       </section>
     </main>
   </div>
+
+  <dialog id="groupDialog" class="form-dialog">
+    <form id="groupForm">
+      <div class="dialog-head"><div><p class="eyebrow">NEW INPUT GROUP</p><h2>Add customer group</h2></div><button type="button" class="icon" data-close="groupDialog">×</button></div>
+      <label>Customer group name<input name="name" required placeholder="Exact WhatsApp group name"></label>
+      <div class="field-grid"><label>LD %<input name="ld" type="number" min="0" max="100" value="100" required></label><label>Limit (₹)<input name="limit" type="number" min="0" value="0" required></label><label class="toggle-field">Instant Cutting<input name="instant" type="checkbox"></label></div>
+      <fieldset><legend>Default destinations</legend><div class="field-grid two"><label>All Table<input name="allTable" placeholder="Output group name"></label><label>All Forward<input name="allForward" placeholder="Output group name"></label></div></fieldset>
+      <fieldset><legend>Win Rate</legend><div class="rate-grid"><label>ANK<input name="ank" type="number" value="9.5"></label><label>Jodi<input name="jodi" type="number" value="95"></label><label>SP<input name="sp" type="number" value="150"></label><label>DP<input name="dp" type="number" value="300"></label><label>TP<input name="tp" type="number" value="600"></label><label>FS<input name="fs" type="number" value="10000"></label><label>HS<input name="hs" type="number" value="1000"></label><label>Commission %<input name="commission" type="number" value="0"></label></div></fieldset>
+      <div class="dialog-actions"><button type="button" class="secondary" data-close="groupDialog">Cancel</button><button class="primary" type="submit">Add Input Group</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="marketDialog" class="form-dialog">
+    <form id="marketForm">
+      <div class="dialog-head"><div><p class="eyebrow">NEW MARKET</p><h2>Add market timing</h2></div><button type="button" class="icon" data-close="marketDialog">×</button></div>
+      <label>Market name<input name="name" required placeholder="Example: KALYAN_DAY_OP"></label>
+      <div class="field-grid"><label>Active days<input name="days" type="number" min="0" max="7" value="6"></label><label>Start hour<input name="startHour" type="number" min="0" max="23" value="0"></label><label>Start minute<input name="startMinute" type="number" min="0" max="59" value="0"></label><label>End hour<input name="endHour" type="number" min="0" max="23" value="0"></label><label>End minute<input name="endMinute" type="number" min="0" max="59" value="0"></label></div>
+      <div class="dialog-actions"><button type="button" class="secondary" data-close="marketDialog">Cancel</button><button class="primary" type="submit">Add Market</button></div>
+    </form>
+  </dialog>
   <script src="renderer.js"></script>
 </body>
 </html>

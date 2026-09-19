@@ -94,3 +94,31 @@ npm start
 ```
 
 Use `auth_info/` for one Baileys session only. First run prints a QR.
+
+
+## Cobo AI Desktop (Windows, Linux and macOS)
+
+The `desktop/` app is the local control panel. It preserves the uploaded JSON
+format (including the one-item JSON array format), lets the operator edit it,
+and generates a private runtime config only while launching the bot.
+
+```bash
+cd desktop
+npm install
+npm start
+```
+
+In the app: import the client JSON, choose this repository's bot folder, then
+select **Launch Session ONE**. WhatsApp QR authentication remains in the bot's
+`auth_info/` folder and is never embedded in the JSON or application build.
+
+Build on the target operating system:
+
+```bash
+npm run dist
+```
+
+This produces an NSIS installer on Windows, an AppImage on Linux, and a DMG on
+macOS. Before the first desktop launch, install the bot dependencies in the
+selected bot folder and create its Python virtual environment as described
+above.

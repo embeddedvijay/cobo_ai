@@ -157,6 +157,17 @@ class Session(Reply_processor, Scheduler):
         )
         return True
 
+    def notify_limit_once(self, contact: str) -> bool:
+        try:
+            from .db_ops import claim_limit_notice
+            limit = int(self.rule_for(contact).get("Limit", 0) or 0)
+            if claim_limit_notice(self.client_name, contact, limit):
+                self.send_message_to(contact, "*LIMIT CHECK*", priority=90)
+                return True
+        except Exception as exc:
+            print(f"Limit notification check failed for {contact}: {exc}", flush=True)
+        return False
+
     def send_message_to(self, number, message: str, *, market: str | None = None, settlement_payload: dict | None = None, priority: int = 50, business_date: str | None = None) -> None:
         """Legacy forward/table/play/win output -> durable Baileys outbox."""
         targets = number if isinstance(number, list) else [number]

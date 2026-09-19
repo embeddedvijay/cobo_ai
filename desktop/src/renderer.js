@@ -7,6 +7,7 @@ let selectedMarketBase = '';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+const setMessage = value => { const el = $('#saveMessage'); if (el) el.textContent = value; };
 
 function goto(name) {
   pages.forEach(page => page.classList.toggle('active', page.id === name));
@@ -44,9 +45,9 @@ async function mutate(change) {
     change(next);
     const saved = await window.cobo.saveConfig(JSON.stringify(next));
     renderSummary(saved);
-    $('#saveMessage').textContent = 'Changes saved.';
+    setMessage('Changes saved.');
   } catch (error) {
-    $('#saveMessage').textContent = error.message;
+    setMessage(error.message);
   }
 }
 function directorFor(group) {
@@ -293,14 +294,13 @@ async function startService() {
   catch (error) { alert(error.message); }
 }
 async function saveOnly() {
-  try { const next = await window.cobo.saveConfig(JSON.stringify(config())); renderSummary(next); $('#saveMessage').textContent = 'Changes saved.'; }
-  catch (error) { $('#saveMessage').textContent = error.message; }
+  try { const next = await window.cobo.saveConfig(JSON.stringify(config())); renderSummary(next); setMessage('Changes saved.'); }
+  catch (error) { setMessage(error.message); }
 }
 $('#chooseBot').addEventListener('click', chooseWorkspace);
 $('#launchService').addEventListener('click', startService);
 $('#stopBot').addEventListener('click', () => window.cobo.stopBot());
-$('#saveConfig').addEventListener('click', saveOnly);
-$('#saveRestart').addEventListener('click', async () => { await saveOnly(); await window.cobo.stopBot(); await startService(); });
+
 
 window.cobo.onLog(log);
 window.cobo.onStatus(setService);

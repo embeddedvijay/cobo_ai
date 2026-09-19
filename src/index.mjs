@@ -167,8 +167,12 @@ function runSerial(runtime, jid, task) {
 
 async function sendOutbox(runtime, item) {
   if (item.channel !== 'whatsapp') return;
-  const target = runtime.output.get(normalise(item.target)) || (isJid(item.target) ? item.target : null);
-  if (!target) throw new Error(`Unknown output target: ${item.target}`);
+  // A normal source reply / LIMIT CHECK targets an input customer group.
+  // Table and fast-forward items normally target an output group.
+  const configuredInputTarget = [...runtime.input.entries()]
+    .find(([, name]) => normalise(name).toLowerCase() === normalise(item.target).toLowerCase())?.[0];
+  const target = runtime.output.get(normalise(item.target)) || configuredInputTarget || (isJid(item.target) ? item.target : null);
+  if (!target) throw new Error(`Unknown WhatsApp group target: ${item.target}`);
   const options = item.quote ? { quoted: item.quote } : undefined;
   const sent = await runtime.socket.sendMessage(target, { text: item.text }, options);
   return { sent, target };

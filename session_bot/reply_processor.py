@@ -262,9 +262,14 @@ class Reply_processor(dynamic_time_manager):
                     data["Result"] = result_list
                     data["Total"] = total
                     data["Action"] = msg
-                    data["Settled"] = False
+                    # Instant groups are recorded as already table-sent so the
+                    # end-time scheduler cannot send their amount again.
+                    instant = self.is_instant_cutting(contact)
+                    data["Settled"] = instant
                     data["Analysis"] = hla_analysis
                     add_data(data)
+                    if instant:
+                        self.send_instant_table(contact, market, result_list)
                     return msg,0
                 
                 elif(action == "✅🔴"):

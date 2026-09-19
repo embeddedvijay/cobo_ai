@@ -103,9 +103,18 @@ class Session(Reply_processor, Scheduler):
         return str(market).rsplit("_", 1)[0]
 
     def director_target(self, contact: str, market: str, kind: str) -> str | None:
+        """Market override wins; otherwise use this customer's all-market route.
+
+        New desktop JSON:
+          Director: {all_table, all_fast_forward, market_overrides: {...}}
+        Old per-market Director JSON remains valid for existing users.
+        """
         director = self.rule_for(contact).get("Director", {})
-        row = director.get(self._base_market(market), {})
-        return row.get(kind)
+        base = self._base_market(market)
+        overrides = director.get("market_overrides", {})
+        row = overrides.get(base, director.get(base, {})) or {}
+        default_key = "all_table" if kind == "table" else "all_fast_forward"
+        return row.get(kind) or director.get(default_key)
 
     def table_routes_for_market(self, market: str) -> dict:
         """Output target -> only its customers, so LD never leaks across groups."""

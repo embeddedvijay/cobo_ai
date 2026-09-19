@@ -282,18 +282,29 @@ class OutputSettlementService:
         # queued, and only when every table had its complete Result document.
         # The trigger WhatsApp id makes a repeated upsert of the same `last`
         # idempotent.
-        if queued_details and not counts["waiting_result"]:
+        # A retry can have no newly-pending tables because individual replies
+        # were already sent by an earlier trigger. Build the final from every
+        # settled table for this output group and active business date instead.
+        total_details = [
+            item.get("settlement_details") or {}
+            for item in db.output_settlement_details(
+                client_name, session_name, output_jid, active_business_date
+            )
+        ]
+        if total_details and not counts["waiting_result"]:
             db.enqueue({
                 "client_name": client_name,
                 "session_name": session_name,
                 "channel": "whatsapp",
                 "target": output_jid,
-                "text": self._group_total(queued_details, icons),
+                "text": self._group_total(total_details, icons),
                 "quote": None,
                 "kind": "settlement_group_total",
-                "dedupe_key": f"output-settlement-total:{output_jid}:{trigger_message_id}",
+                # One final total per output group/business day even if
+                # operator sends the trigger again for recovery.
+                "dedupe_key": f"output-settlement-total:{output_jid}:{active_business_date}",
                 "priority": 70,
-                "business_date": next(iter(result_cache), None),
+                "business_date": active_business_date,
             })
             counts["group_total_queued"] = True
         # This runs after the output queue is written. Lower priority guarantees

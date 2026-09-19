@@ -11,7 +11,7 @@
     <aside class="sidebar">
       <div class="brand"><span>♛</span><div><b id="clientName">Cobo AI</b><small id="clientEmail">Local desktop control</small></div></div>
       <nav>
-        <button class="nav active" data-page="launch">◈ <span>Session ONE</span></button>
+        <button class="nav active" data-page="launch">◈ <span>Bot Control</span></button>
         <button class="nav" data-page="dashboard">▦ <span>Results &amp; Markets</span></button>
         <button class="nav" data-page="transactions">▤ <span>Transactions</span></button>
         <button class="nav" data-page="config">⚙ <span>Configuration</span></button>
@@ -21,7 +21,7 @@
     </aside>
     <main>
       <section id="launch" class="page active launch-page">
-        <div class="launch-panel"><p class="eyebrow">LOCAL BAILEYS CONTROL</p><h1>Launch<br/>Session ONE</h1><p id="launchDetail">Import your JSON configuration, then select the folder that contains the npm bot.</p><button class="primary big" id="launchBot">▶ Launch Session ONE</button><button class="secondary" data-goto="config">⚙ Configure Session ONE</button><div class="tips">💡 Use one WhatsApp account per session<br/>📌 Group names must match the selected JSON configuration<br/>🔒 Login credentials stay only on this device</div></div>
+        <div class="launch-panel"><p class="eyebrow">LOCAL BAILEYS CONTROL</p><h1>Launch<br/>Bot Control</h1><p id="launchDetail">Import your JSON configuration, then select the folder that contains the npm bot.</p><button class="primary big" id="launchBot">▶ Launch Bot Control</button><button class="secondary" data-goto="config">⚙ Configure Bot Control</button><div class="tips">💡 Use one WhatsApp account per session<br/>📌 Group names must match the selected JSON configuration<br/>🔒 Login credentials stay only on this device</div></div>
       </section>
       <section id="dashboard" class="page">
         <header><div><p class="eyebrow">TODAY'S CONTROL BOARD</p><h2>Customer, market &amp; session overview</h2></div><button class="primary" id="dashboardLaunch">Launch Bot</button></header>
@@ -29,7 +29,7 @@
         <div class="content-grid"><article class="panel"><div class="panel-title"><h3>Configured customers</h3><span id="contactCount">0 contacts</span></div><div id="customerList" class="customer-list"></div></article><article class="panel"><div class="panel-title"><h3>Today's markets</h3><span id="marketCount">0 markets</span></div><div id="marketList" class="market-list"></div></article><article class="panel log-panel"><div class="panel-title"><h3>Bot console</h3><span>live</span></div><pre id="logs">Select JSON config, choose bot folder, then launch.</pre></article></div>
       </section>
       <section id="transactions" class="page"><header><div><p class="eyebrow">LOCAL VIEW</p><h2>Transactions</h2></div></header><div class="panel empty"><h3>Bot transaction API connection</h3><p>This desktop app launches the local npm bot. Live transactions can be connected to its FastAPI/MongoDB API in the next phase; config, bot state and process logs are already local.</p></div></section>
-      <section id="config" class="page"><header><div><p class="eyebrow">JSON CONFIGURATION</p><h2>Client and session configuration</h2></div><div class="header-actions"><button class="secondary" id="importConfig">Import JSON</button><button class="primary" id="saveConfig">Save JSON</button></div></header><div class="config-layout"><article class="panel config-info"><h3>Imported config</h3><div id="configSummary">No JSON configuration imported.</div><p>Use the same JSON format as <code>vijay.Config.json</code>. The app stores a private local copy and passes its path to the bot as <code>COBO_CONFIG_PATH</code>.</p></article><article class="panel editor"><label for="jsonEditor">JSON data</label><textarea id="jsonEditor" spellcheck="false" placeholder="Import vijay.Config.json to edit it here."></textarea><p id="saveMessage" class="save-message"></p></article></div></section>
+      <section id="config" class="page"><header><div><p class="eyebrow">JSON CONFIGURATION</p><h2>Client and group configuration</h2></div><div class="header-actions"><button class="secondary" id="importConfig">Import JSON</button><button class="primary" id="saveConfig">Save JSON</button></div></header><div class="config-layout"><article class="panel config-info"><h3>Imported config</h3><div id="configSummary">No JSON configuration imported.</div><p>Use the desktop JSON format: client, markets and input-group rules. The app stores a private local copy and passes its path to the bot as <code>COBO_CONFIG_PATH</code>.</p></article><article class="panel editor"><label for="jsonEditor">JSON data</label><textarea id="jsonEditor" spellcheck="false" placeholder="Import vijay.Config.json to edit it here."></textarea><p id="saveMessage" class="save-message"></p></article></div></section>
     </main>
   </div>
   <script src="renderer.js"></script>

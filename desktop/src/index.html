@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Cobo</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="desktop-controls.css" />
 </head>
 <body>
   <div class="shell">
@@ -21,12 +22,12 @@
     </aside>
     <main>
       <section id="dashboard" class="page">
-        <header><div><p class="eyebrow">BUSINESS OVERVIEW</p><h1>Today at a glance</h1><p class="subtitle">Customer, market and service activity.</p></div><button class="primary" data-goto="config">Open Configuration</button></header>
-        <div id="metricCards" class="metric-grid"></div>
-        <div class="content-grid">
-          <article class="panel"><div class="panel-title"><h3>Input groups</h3><span id="contactCount">0 active</span></div><div id="customerList" class="customer-list"></div></article>
-          <article class="panel"><div class="panel-title"><h3>Market timings</h3><span id="marketCount">0 markets</span></div><div id="marketList" class="market-list"></div></article>
-          <article class="panel log-panel"><div class="panel-title"><h3>Service activity</h3><span>live</span></div><pre id="logs">Workspace is ready. Choose the workspace folder, then start the service.</pre></article>
+        <header class="dashboard-header"><div><p class="eyebrow">BUSINESS CONTROL CENTER</p><h1>Today’s workspace</h1><p class="subtitle">Customer groups, market timings and delivery activity in one place.</p></div><div class="dashboard-actions"><button class="secondary" data-goto="config">Manage settings</button><button class="primary" id="dashboardStart">▶ Start Service</button></div></header>
+        <div id="metricCards" class="metric-grid crm-metrics"></div>
+        <div class="crm-grid">
+          <article class="panel crm-customers"><div class="panel-title"><div><p class="eyebrow">CUSTOMERS</p><h3>Input group control</h3></div><span id="contactCount">0 active</span></div><div class="crm-columns"><span>Group</span><span>LD</span><span>Limit</span><span>Routing</span></div><div id="customerList" class="customer-list"></div><button class="quiet-action" data-goto="config">Open customer rules →</button></article>
+          <article class="panel crm-markets"><div class="panel-title"><div><p class="eyebrow">MARKETS</p><h3>Today’s timing board</h3></div><span id="marketCount">0 timings</span></div><div id="marketList" class="market-list"></div><button class="quiet-action" data-goto="config">Open market timings →</button></article>
+          <article class="panel crm-activity"><div class="panel-title"><div><p class="eyebrow">ACTIVITY</p><h3>Service activity</h3></div><span class="live-label">● LIVE</span></div><pre id="logs">Workspace is ready. Choose the workspace folder, then start the service.</pre></article>
         </div>
       </section>
       <section id="results" class="page"><header><div><p class="eyebrow">RESULTS &amp; MARKETS</p><h1>Market view</h1></div><button class="primary" data-goto="config">Edit Timings</button></header><div class="panel empty"><h3>Live market data</h3><p>Today’s market and result details will appear here while the service is running.</p></div></section>
@@ -72,8 +73,8 @@
   <dialog id="overrideDialog" class="form-dialog small-dialog">
     <form id="overrideForm">
       <div class="dialog-head"><div><p class="eyebrow">MARKET-WISE DESTINATION</p><h2>Add destination</h2></div><button type="button" class="icon" data-close="overrideDialog">×</button></div>
-      <label>Market name<input name="market" required placeholder="Example: SRIDEVI_DAY"></label>
-      <div class="field-grid two"><label>Table destination<input name="table" placeholder="Output group name"></label><label>Forward destination<input name="forward" placeholder="Output group name"></label></div>
+      <label>Market name<select id="overrideMarket" name="market" required></select></label>
+      <div class="field-grid two"><label>Table destination<select id="overrideTable" name="table"></select></label><label>Forward destination<select id="overrideForward" name="forward"></select></label></div>
       <div class="dialog-actions"><button type="button" class="secondary" data-close="overrideDialog">Cancel</button><button class="primary" type="submit">Add destination</button></div>
     </form>
   </dialog>

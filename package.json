@@ -6,7 +6,8 @@
   "scripts": {
     "start": "bash start.sh",
     "bridge": "node src/index.mjs",
-    "check": "node --check src/index.mjs"
+    "check": "node --check src/index.mjs",
+    "groups": "node id_finder.mjs"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",

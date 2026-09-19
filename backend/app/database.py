@@ -372,6 +372,20 @@ class Database:
             query["business_date"] = business_date
         return list(self.outbox.find(query).sort("created_at", ASCENDING).limit(limit))
 
+    def output_settlement_details(self, client_name: str, session_name: str, output_jid: str, business_date: str) -> list[dict]:
+        """All tables that already have a generated quoted settlement reply."""
+        query = {
+            "client_name": client_name,
+            "session_name": session_name,
+            "kind": "legacy_output",
+            "state": "sent",
+            "delivery_jid": output_jid,
+            "business_date": business_date,
+            "settlement_state": {"$in": ["queued", "sent"]},
+            "settlement_details": {"$exists": True},
+        }
+        return list(self.outbox.find(query).sort("created_at", ASCENDING))
+
     def reserve_output_settlement(self, outbox_id) -> bool:
         result = self.outbox.update_one(
             {"_id": outbox_id, "settlement_state": {"$in": [None, "pending"]}},

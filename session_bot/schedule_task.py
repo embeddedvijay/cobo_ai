@@ -80,11 +80,22 @@ class Scheduler:
             return
         #self.send_message_to("My Airtel",f"No Open Result found for Market {market[:-3]}\n Please ADD under 10 Minutes..")
 
-    def send_table(self,client_name,market,master_contact,per = 100)->bool:
+    def send_table(self,client_name,market,master_contact,per = 100, customer_contacts=None)->bool:
+        # Director creates one table per output group. A customer contributes
+        # only to the group selected for this market, never to another group's
+        # table. Recursive calls reuse the original legacy table formatter.
+        routes = self.table_routes_for_market(market)
+        if customer_contacts is None and routes:
+            sent = False
+            for target, contacts in routes.items():
+                sent = self.send_table(client_name, market, target, per, customer_contacts=contacts) or sent
+            return sent
+
+        customers = list(customer_contacts or self.customer_contacts)
         data = {key:0 for key in main_num_list}
 
         contact_cutting = get_contact_cutting(client_name=self.client_name)
-        for contact in self.customer_contacts:
+        for contact in customers:
             contact_per = contact_cutting.get(contact,100)/100
             cdata = get_client_table(client_name,market,contact_name=contact,to_settle=True)
             for k,v in cdata.items():
@@ -127,7 +138,7 @@ class Scheduler:
 
         elif '_CL' in market:
             data_open = {key:0 for key in main_num_list}
-            for contact in self.customer_contacts:
+            for contact in customers:
                 contact_per = contact_cutting.get(contact,100)/100
                 odata_setteled = get_client_table(client_name,market.replace('CL','OP'),contact_name=contact,to_settle=False,settled=True,c_settled=False,to_csettle=True)
                 for k,v in odata_setteled.items():
@@ -187,7 +198,7 @@ class Scheduler:
         
         if(sum>0):
             self.send_message_to(
-                self.out_contacts['table'][market], msg_table, market=market,
+                master_contact, msg_table, market=market,
                 settlement_payload={"bets": settlement_bets, "total_play": sum},
                 # A due table must outrank periodic outbox flushing and normal
                 # acknowledgements. Sending remains sequential per WhatsApp

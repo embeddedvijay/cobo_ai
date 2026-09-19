@@ -1,165 +1,167 @@
 const pages = [...document.querySelectorAll('.page')];
 const nav = [...document.querySelectorAll('.nav')];
+const tabs = [...document.querySelectorAll('.tab')];
 let summary;
 
 const $ = selector => document.querySelector(selector);
-const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
+const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 
 function goto(name) {
   pages.forEach(page => page.classList.toggle('active', page.id === name));
   nav.forEach(button => button.classList.toggle('active', button.dataset.page === name));
 }
-
-function contacts() {
-  return Object.entries(summary?.config?.in_contacts || {}).map(([name, data]) => ({ name, ...data }));
+function gotoTab(name) {
+  tabs.forEach(tab => tab.classList.toggle('active', tab.dataset.tab === name));
+  document.querySelectorAll('.tab-page').forEach(page => page.classList.toggle('active', page.id === name));
 }
-function markets() { return Object.keys(summary?.config?.fixed_market_time || {}); }
+function config() { return summary?.config || {}; }
+function groups() { return Object.entries(config().in_contacts || {}).map(([name, rule]) => ({ name, ...rule })); }
+function timings() { return Object.entries(config().fixed_market_time || {}); }
 
 function renderSummary(next) {
-  summary = next || null;
-  const client = summary?.clientName || 'Cobo AI';
+  summary = next || summary;
+  const client = summary?.clientName || 'Workspace';
   $('#clientName').textContent = client;
-  $('#clientEmail').textContent = summary ? `local JSON · ${summary.contactCount} groups` : 'Local desktop control';
-  $('#configState').textContent = summary ? 'Loaded' : 'Not loaded';
-  $('#contactCount').textContent = `${summary?.contactCount || 0} contacts`;
-  $('#marketCount').textContent = `${summary?.marketCount || 0} markets`;
-  const data = contacts();
-  $('#metricCards').innerHTML = data.slice(0, 5).map(item =>
-    `<div class="metric"><b>${esc(item.name)}</b><small>LIMIT: ${esc(item.Limit || '—')}</small><div><span>PLAY</span><strong>0</strong><span>WIN</span><strong>0</strong></div></div>`
-  ).join('') || '<div class="metric muted">Import JSON to load customers.</div>';
-  $('#customerList').innerHTML = data.map(item =>
-    `<div class="row"><b>${esc(item.name)}</b><span>LD ${esc(item.LD || '—')} · Limit ${esc(item.Limit || '—')}</span></div>`
-  ).join('') || '<p class="muted">No configured customers.</p>';
-  $('#marketList').innerHTML = markets().map(name =>
-    `<div class="market"><b>${esc(name.replaceAll('_', ' '))}</b><span>Configured</span></div>`
-  ).join('') || '<p class="muted">No market timing data.</p>';
-  $('#configSummary').innerHTML = summary
-    ? `<dl><dt>Client</dt><dd>${esc(client)}</dd><dt>Input groups</dt><dd>${summary.contactCount}</dd><dt>Markets</dt><dd>${summary.marketCount}</dd></dl>`
-    : 'No JSON configuration imported.';
+  $('#contactCount').textContent = `${summary?.contactCount || 0} active`;
+  $('#marketCount').textContent = `${summary?.marketCount || 0} timings`;
+  $('#metricCards').innerHTML = [
+    ['Input Groups', summary?.contactCount || 0, 'Configured customer groups'],
+    ['Market Timings', summary?.marketCount || 0, 'Open and close rules'],
+    ['Service Status', $('#botState')?.textContent || 'Stopped', 'Local workspace service'],
+    ['Today Play', '—', 'Available while service runs']
+  ].map(([label, value, note], i) => `<div class="metric metric-${i}"><small>${label}</small><strong>${esc(value)}</strong><span>${note}</span></div>`).join('');
+  $('#customerList').innerHTML = groups().map(item => `<div class="row"><b>${esc(item.name)}</b><span>LD ${esc(item.LD ?? 100)}% · Limit ₹${esc(item.Limit ?? 0)}</span></div>`).join('') || '<p class="muted">No input group configured.</p>';
+  $('#marketList').innerHTML = timings().slice(0, 8).map(([name]) => `<div class="market"><b>${esc(name.replaceAll('_', ' '))}</b><span>Active</span></div>`).join('') || '<p class="muted">No market timings available.</p>';
   renderManagers();
 }
-
-function readConfig() {
-  const parsed = JSON.parse($('#jsonEditor').value || '{}');
-  return Array.isArray(parsed) ? parsed[0] : parsed;
-}
-function writeConfig(config) {
-  $('#jsonEditor').value = JSON.stringify(config, null, 2);
-  if (summary) {
-    summary.config = config;
-    summary.contactCount = Object.keys(config.in_contacts || {}).length;
-    summary.marketCount = Object.keys(config.fixed_market_time || {}).length;
+function currentConfig() { return structuredClone(config()); }
+async function mutate(change) {
+  try {
+    const next = currentConfig();
+    change(next);
+    const saved = await window.cobo.saveConfig(JSON.stringify(next));
+    renderSummary(saved);
+    $('#saveMessage').textContent = 'Changes saved.';
+  } catch (error) {
+    $('#saveMessage').textContent = error.message;
   }
-  renderSummary(summary);
 }
-function timeValue(row, index, field) {
-  const value = row?.[index]?.[field];
-  return Number.isFinite(Number(value)) ? Number(value) : 0;
+function directorFor(group) {
+  return group.Director || { all_table: '', all_fast_forward: '', market_overrides: {} };
 }
-function routeValue(director, base, field) {
-  return director?.market_overrides?.[base]?.[field] || '';
+function rateInput(group, key) {
+  return esc(group.win_rate?.[key] ?? '');
 }
-
 function renderManagers() {
-  const groups = summary?.config?.in_contacts || {};
-  $('#groupManager').innerHTML = Object.entries(groups).map(([name, group]) => {
-    const director = group.Director || {};
+  const groupRoot = $('#groupManager');
+  if (groupRoot) groupRoot.innerHTML = groups().map(({ name, ...group }) => {
+    const director = directorFor(group);
     const overrides = director.market_overrides || {};
-    const overrideRows = Object.keys(overrides).map(base => `
-      <div class="override-row" data-group="${esc(name)}" data-market="${esc(base)}">
-        <b>${esc(base)}</b>
-        <input data-field="table" value="${esc(routeValue(director, base, 'table'))}" placeholder="Table output group">
-        <input data-field="fast_forward" value="${esc(routeValue(director, base, 'fast_forward'))}" placeholder="Fast-forward group">
+    const overrideRows = Object.entries(overrides).map(([market, route]) => `
+      <div class="override-row" data-group="${esc(name)}" data-market="${esc(market)}">
+        <b>${esc(market)}</b>
+        <label>Table<input data-route="table" value="${esc(route?.table || '')}" placeholder="Group name"></label>
+        <label>Forward<input data-route="fast_forward" value="${esc(route?.fast_forward || '')}" placeholder="Group name"></label>
         <button class="icon danger" data-action="delete-override">−</button>
       </div>`).join('');
     return `
       <article class="group-card" data-group="${esc(name)}">
-        <div class="group-head"><input class="group-name" value="${esc(name)}" aria-label="Contact name"><button class="icon danger" data-action="delete-group">Delete</button></div>
+        <div class="group-head"><label>Customer group name<input class="group-name" value="${esc(name)}"></label><button class="icon danger" data-action="delete-group">Delete</button></div>
         <div class="field-grid">
           <label>LD %<input data-field="LD" type="number" min="0" max="100" value="${esc(group.LD ?? 100)}"></label>
-          <label>Limit<input data-field="Limit" type="number" min="0" value="${esc(group.Limit ?? 0)}"></label>
-          <label class="toggle-field">Instant cutting<input data-field="instant_cutting" type="checkbox" ${group.instant_cutting ? 'checked' : ''}></label>
+          <label>Limit (₹)<input data-field="Limit" type="number" min="0" value="${esc(group.Limit ?? 0)}"></label>
+          <label class="toggle-field">Instant Cutting<input data-field="instant_cutting" type="checkbox" ${group.instant_cutting ? 'checked' : ''}></label>
         </div>
-        <fieldset><legend>Director — default for all markets</legend>
-          <div class="field-grid"><label>All table<input data-director="all_table" value="${esc(director.all_table || '')}" placeholder="ALL_MARKET"></label>
-          <label>All fast-forward<input data-director="all_fast_forward" value="${esc(director.all_fast_forward || '')}" placeholder="ALL_MARKET"></label></div>
-          <div class="override-title">Market-wise overrides <button class="text-button" data-action="add-override">＋ Add override</button></div>
-          <div class="override-list">${overrideRows || '<span class="muted">No overrides — default route will be used.</span>'}</div>
+        <fieldset><legend>Delivery destinations</legend>
+          <div class="field-grid two">
+            <label>All Table<input data-director="all_table" value="${esc(director.all_table || '')}" placeholder="Output group name"></label>
+            <label>All Forward<input data-director="all_fast_forward" value="${esc(director.all_fast_forward || '')}" placeholder="Output group name"></label>
+          </div>
+          <div class="override-title">Market-wise destinations <button class="text-button" data-action="add-override">＋ Add market destination</button></div>
+          <div class="override-list">${overrideRows || '<span class="muted">All markets use the destinations above.</span>'}</div>
         </fieldset>
-        <fieldset><legend>Win rate</legend><div class="rate-grid">
-          ${['ANK','Jodi','SP','DP','TP','FS','HS','Commission'].map(key => `<label>${key}<input data-rate="${key}" type="number" value="${esc(group.win_rate?.[key] ?? '')}"></label>`).join('')}
+        <fieldset><legend>Win Rate</legend><div class="rate-grid">
+          ${['ANK', 'Jodi', 'SP', 'DP', 'TP', 'FS', 'HS', 'Commission'].map(key => `<label>${key}${key === 'Commission' ? ' %' : ''}<input data-rate="${key}" type="number" value="${rateInput(group, key)}"></label>`).join('')}
         </div></fieldset>
       </article>`;
-  }).join('') || '<p class="muted">No input groups. Add your first WhatsApp customer group.</p>';
+  }).join('') || '<p class="muted">No input group configured. Add your first customer group.</p>';
 
-  const rows = summary?.config?.fixed_market_time || {};
-  $('#marketManager').innerHTML = Object.entries(rows).map(([name, row]) => `
+  const root = $('#marketManager');
+  if (root) root.innerHTML = timings().map(([name, row]) => `
     <div class="timing-row" data-market-key="${esc(name)}">
-      <input class="market-key" value="${esc(name)}" aria-label="Market key">
-      <label>Day<input data-time="day" type="number" min="0" max="6" value="${esc(row?.[1] ?? 6)}"></label>
-      <label>Start<input data-time="startHour" type="number" min="0" max="23" value="${timeValue(row,0,'hour')}"><input data-time="startMinute" type="number" min="0" max="59" value="${timeValue(row,0,'minute')}"></label>
-      <label>End<input data-time="endHour" type="number" min="0" max="23" value="${timeValue(row,2,'hour')}"><input data-time="endMinute" type="number" min="0" max="59" value="${timeValue(row,2,'minute')}"></label>
+      <label>Market<input class="market-key" value="${esc(name)}"></label>
+      <label>Active days<input data-time="day" type="number" min="0" max="7" value="${esc(row?.[1] ?? 6)}"></label>
+      <label>Start (H / M)<div><input data-time="startHour" type="number" min="0" max="23" value="${esc(row?.[0]?.hour ?? 0)}"><input data-time="startMinute" type="number" min="0" max="59" value="${esc(row?.[0]?.minute ?? 0)}"></div></label>
+      <label>End (H / M)<div><input data-time="endHour" type="number" min="0" max="23" value="${esc(row?.[2]?.hour ?? 0)}"><input data-time="endMinute" type="number" min="0" max="59" value="${esc(row?.[2]?.minute ?? 0)}"></div></label>
       <button class="icon danger" data-action="delete-market">Delete</button>
-    </div>`).join('') || '<p class="muted">No market timings.</p>';
+    </div>`).join('') || '<p class="muted">No market timings available.</p>';
+}
+function groupData(next, name) {
+  next.in_contacts ||= {};
+  return next.in_contacts[name];
+}
+function log(value) {
+  const out = $('#logs');
+  out.textContent = `${out.textContent}\n${value}`.trim().slice(-12000);
+  out.scrollTop = out.scrollHeight;
+}
+function setService(status) {
+  const label = status.running ? 'Running' : 'Stopped';
+  $('#botState').textContent = label;
+  $('#botDot').classList.toggle('running', Boolean(status.running));
+  if (status.code !== undefined) log(`Service stopped with code ${status.code}`);
+  if (summary) renderSummary(summary);
 }
 
-function mutate(callback) {
-  try { const config = readConfig(); callback(config); writeConfig(config); }
-  catch (error) { $('#saveMessage').textContent = `Invalid JSON: ${error.message}`; }
-}
+nav.forEach(button => button.addEventListener('click', () => goto(button.dataset.page)));
+document.querySelectorAll('[data-goto]').forEach(button => button.addEventListener('click', () => goto(button.dataset.goto)));
+tabs.forEach(button => button.addEventListener('click', () => gotoTab(button.dataset.tab)));
 
 $('#groupManager').addEventListener('change', event => {
-  if (event.target.closest('.override-row')) return;
-  const card = event.target.closest('[data-group]'); if (!card) return;
+  const card = event.target.closest('.group-card'); if (!card) return;
   const oldName = card.dataset.group;
-  mutate(config => {
-    const group = config.in_contacts?.[oldName]; if (!group) return;
-    if (event.target.classList.contains('group-name')) {
+  const row = event.target.closest('.override-row');
+  mutate(next => {
+    const group = groupData(next, oldName); if (!group) return;
+    if (row && event.target.dataset.route) {
+      group.Director ||= {}; group.Director.market_overrides ||= {};
+      group.Director.market_overrides[row.dataset.market] ||= {};
+      group.Director.market_overrides[row.dataset.market][event.target.dataset.route] = event.target.value.trim();
+    } else if (event.target.classList.contains('group-name')) {
       const newName = event.target.value.trim();
-      if (newName && newName !== oldName) { config.in_contacts[newName] = group; delete config.in_contacts[oldName]; }
+      if (newName && newName !== oldName) { next.in_contacts[newName] = group; delete next.in_contacts[oldName]; }
     } else if (event.target.dataset.field) {
-      group[event.target.dataset.field] = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
+      group[event.target.dataset.field] = event.target.type === 'checkbox' ? event.target.checked : Number(event.target.value || 0);
     } else if (event.target.dataset.director) {
       group.Director ||= {}; group.Director[event.target.dataset.director] = event.target.value.trim();
     } else if (event.target.dataset.rate) {
       group.win_rate ||= {}; group.win_rate[event.target.dataset.rate] = Number(event.target.value || 0);
-    } else {
-      const row = event.target.closest('[data-market]');
-      if (!row || !event.target.dataset.field) return;
     }
   });
 });
-$('#groupManager').addEventListener('change', event => {
-  const row = event.target.closest('.override-row'); if (!row) return;
-  mutate(config => {
-    const group = config.in_contacts?.[row.dataset.group]; if (!group) return;
-    group.Director ||= {}; group.Director.market_overrides ||= {};
-    group.Director.market_overrides[row.dataset.market] ||= {};
-    group.Director.market_overrides[row.dataset.market][event.target.dataset.field] = event.target.value.trim();
-  });
-});
 $('#groupManager').addEventListener('click', event => {
-  const card = event.target.closest('[data-group]'); if (!card) return;
-  if (event.target.dataset.action === 'delete-group') mutate(config => delete config.in_contacts[card.dataset.group]);
+  const card = event.target.closest('.group-card'); if (!card) return;
+  const name = card.dataset.group;
+  if (event.target.dataset.action === 'delete-group') mutate(next => delete next.in_contacts[name]);
   if (event.target.dataset.action === 'add-override') {
-    const market = prompt('Market base name, e.g. SRIDEVI_DAY'); if (!market) return;
-    mutate(config => {
-      const group = config.in_contacts[card.dataset.group]; group.Director ||= {}; group.Director.market_overrides ||= {};
+    const market = prompt('Market name, for example SRIDEVI_DAY'); if (!market) return;
+    mutate(next => {
+      const group = groupData(next, name); group.Director ||= {}; group.Director.market_overrides ||= {};
       group.Director.market_overrides[market.trim()] = { table: group.Director.all_table || '', fast_forward: group.Director.all_fast_forward || '' };
     });
   }
   if (event.target.dataset.action === 'delete-override') {
     const row = event.target.closest('.override-row');
-    mutate(config => delete config.in_contacts[row.dataset.group].Director.market_overrides[row.dataset.market]);
+    mutate(next => delete next.in_contacts[name].Director.market_overrides[row.dataset.market]);
   }
 });
 $('#marketManager').addEventListener('change', event => {
-  const row = event.target.closest('[data-market-key]'); if (!row) return;
-  const oldKey = row.dataset.marketKey;
-  mutate(config => {
-    const timing = config.fixed_market_time?.[oldKey]; if (!timing) return;
+  const line = event.target.closest('.timing-row'); if (!line) return;
+  const oldKey = line.dataset.marketKey;
+  mutate(next => {
+    const timing = next.fixed_market_time?.[oldKey]; if (!timing) return;
     if (event.target.classList.contains('market-key')) {
-      const key = event.target.value.trim(); if (key && key !== oldKey) { config.fixed_market_time[key] = timing; delete config.fixed_market_time[oldKey]; }
+      const key = event.target.value.trim(); if (key && key !== oldKey) { next.fixed_market_time[key] = timing; delete next.fixed_market_time[oldKey]; }
       return;
     }
     const field = event.target.dataset.time; if (!field) return;
@@ -171,45 +173,45 @@ $('#marketManager').addEventListener('change', event => {
   });
 });
 $('#marketManager').addEventListener('click', event => {
-  const row = event.target.closest('[data-market-key]'); if (!row || event.target.dataset.action !== 'delete-market') return;
-  mutate(config => delete config.fixed_market_time[row.dataset.marketKey]);
+  const line = event.target.closest('.timing-row');
+  if (line && event.target.dataset.action === 'delete-market') mutate(next => delete next.fixed_market_time[line.dataset.marketKey]);
 });
-
-function log(line) { const el = $('#logs'); el.textContent = `${el.textContent}\n${line}`.trim().slice(-12000); el.scrollTop = el.scrollHeight; }
-function setBot(status) { $('#botState').textContent = status.running ? 'Running' : 'Stopped'; $('#botDot').classList.toggle('running', Boolean(status.running)); if (status.code !== undefined) log(`Bot stopped with code ${status.code}`); }
-
-nav.forEach(button => button.addEventListener('click', () => goto(button.dataset.page)));
-document.querySelectorAll('[data-goto]').forEach(button => button.addEventListener('click', () => goto(button.dataset.goto)));
-
-async function importConfig() {
-  try { const next = await window.cobo.chooseConfig(); if (!next) return; const data = await window.cobo.loadConfig(); $('#jsonEditor').value = data.raw; renderSummary(next); log(`Config imported: ${next.clientName}`); }
-  catch (error) { alert(error.message); }
-}
-async function saveConfig() {
-  try { const next = await window.cobo.saveConfig($('#jsonEditor').value); renderSummary(next); $('#saveMessage').textContent = 'Saved locally.'; return next; }
-  catch (error) { $('#saveMessage').textContent = error.message; throw error; }
-}
-async function chooseBot() { try { const state = await window.cobo.chooseBotDirectory(); log(state.botDirectory ? `Bot folder: ${state.botDirectory}` : 'Bot folder unchanged.'); } catch (error) { alert(error.message); } }
-async function launch() { try { await window.cobo.startBot(); goto('dashboard'); log('npm start launched with desktop runtime config.'); } catch (error) { alert(error.message); goto('config'); } }
-
-$('#importConfig').addEventListener('click', importConfig);
-$('#saveConfig').addEventListener('click', () => saveConfig().catch(() => undefined));
-$('#chooseBot').addEventListener('click', chooseBot);
-$('#launchBot').addEventListener('click', launch);
-$('#dashboardLaunch').addEventListener('click', launch);
-$('#stopBot').addEventListener('click', () => window.cobo.stopBot());
 $('#addGroup').addEventListener('click', () => {
-  const name = prompt('Input WhatsApp group name'); if (!name) return;
-  mutate(config => { config.in_contacts ||= {}; config.in_contacts[name.trim()] = { LD: 100, Limit: 0, instant_cutting: false, Director: { all_table: '', all_fast_forward: '', market_overrides: {} }, win_rate: { ANK: 9.5, Jodi: 95, SP: 150, DP: 300, TP: 600, FS: 10000, HS: 1000, Commission: 0 } }; });
+  const name = prompt('Customer group name'); if (!name) return;
+  mutate(next => {
+    next.in_contacts ||= {};
+    next.in_contacts[name.trim()] = { LD: 100, Limit: 0, instant_cutting: false, Director: { all_table: '', all_fast_forward: '', market_overrides: {} }, win_rate: { ANK: 9.5, Jodi: 95, SP: 150, DP: 300, TP: 600, FS: 10000, HS: 1000, Commission: 0 } };
+  });
 });
 $('#addMarket').addEventListener('click', () => {
-  const name = prompt('Market key, e.g. KALYAN_DAY_OP'); if (!name) return;
-  mutate(config => { config.fixed_market_time ||= {}; config.fixed_market_time[name.trim()] = [{ hour: 0, minute: 0, second: 0 }, 6, { hour: 0, minute: 0, second: 0 }]; });
+  const name = prompt('Market name, for example KALYAN_DAY_OP'); if (!name) return;
+  mutate(next => {
+    next.fixed_market_time ||= {};
+    next.fixed_market_time[name.trim()] = [{ hour: 0, minute: 0, second: 0 }, 6, { hour: 0, minute: 0, second: 0 }];
+  });
 });
-$('#saveRestart').addEventListener('click', async () => { try { await saveConfig(); await window.cobo.stopBot(); await launch(); } catch {} });
-window.cobo.onLog(log); window.cobo.onStatus(setBot);
+async function chooseWorkspace() {
+  try { const state = await window.cobo.chooseBotDirectory(); log(state.botDirectory ? `Workspace folder: ${state.botDirectory}` : 'Workspace folder unchanged.'); }
+  catch (error) { alert(error.message); }
+}
+async function startService() {
+  try { await window.cobo.startBot(); log('Service started.'); }
+  catch (error) { alert(error.message); }
+}
+async function saveOnly() {
+  try { const next = await window.cobo.saveConfig(JSON.stringify(config())); renderSummary(next); $('#saveMessage').textContent = 'Changes saved.'; }
+  catch (error) { $('#saveMessage').textContent = error.message; }
+}
+$('#chooseBot').addEventListener('click', chooseWorkspace);
+$('#launchService').addEventListener('click', startService);
+$('#stopBot').addEventListener('click', () => window.cobo.stopBot());
+$('#saveConfig').addEventListener('click', saveOnly);
+$('#saveRestart').addEventListener('click', async () => { await saveOnly(); await window.cobo.stopBot(); await startService(); });
 
+window.cobo.onLog(log);
+window.cobo.onStatus(setService);
 (async () => {
-  const state = await window.cobo.state(); renderSummary(state.summary); setBot(state);
-  if (state.summary) { const data = await window.cobo.loadConfig(); $('#jsonEditor').value = data.raw; renderManagers(); }
+  const state = await window.cobo.state();
+  renderSummary(state.summary);
+  setService(state);
 })();

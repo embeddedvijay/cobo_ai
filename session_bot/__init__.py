@@ -14,6 +14,7 @@ from .constant import markets_timings
 from .reply_processor import Reply_processor
 from .schedule_task import Scheduler
 from .startup_time_verification import verify_time
+from .runtime_config import custom_market_timings
 
 
 def _contact_name(value: str) -> str:
@@ -31,7 +32,10 @@ class Session(Reply_processor, Scheduler):
         self.outbox_callback = outbox_callback
         self.image_folder = "./market_image_data/"
         os.makedirs(self.image_folder, exist_ok=True)
-        self.markets_time = markets_timings[fixed_market_time]
+        # Desktop JSON supplies its own {MARKET_OP: [start, weekday, end]} map.
+        # Existing YAML installations continue to use their named timing preset.
+        configured_timings = custom_market_timings(session_data.get("market_timings"))
+        self.markets_time = configured_timings or markets_timings[fixed_market_time]
 
         # Direct YAML config replaces the old hard-coded remote Config database.
         self.in_contacts = [_contact_name(contact) for contact in session_data.get("in_contacts", [])]
@@ -73,7 +77,10 @@ class Session(Reply_processor, Scheduler):
             self.out_contacts["win"] = session_data["play_win"]["win"]
             self.in_contacts.append(self.play_win_trigger)
         self.testing = ""
-        verify_time(client_name, fixed_market_time, self.dynamic_timing.get("status", False))
+        if not configured_timings:
+            verify_time(client_name, fixed_market_time, self.dynamic_timing.get("status", False))
+        else:
+            print(f"[{self.session_name}] loaded {len(configured_timings)} market timings from desktop JSON", flush=True)
 
         # These are the original HLA/DB/scheduler classes; no browser is created.
         Reply_processor.__init__(self)

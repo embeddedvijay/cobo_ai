@@ -1,8 +1,9 @@
 const pages = [...document.querySelectorAll('.page')];
 const nav = [...document.querySelectorAll('.nav')];
-const tabs = [...document.querySelectorAll('.tab')];
+const tabs = [...document.querySelectorAll('.control-tab')];
 let summary;
 let overrideTargetGroup = '';
+let selectedMarketBase = '';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -34,6 +35,7 @@ function renderSummary(next) {
   $('#customerList').innerHTML = groups().map(item => `<div class="row"><b>${esc(item.name)}</b><span>LD ${esc(item.LD ?? 100)}% · Limit ₹${esc(item.Limit ?? 0)}</span></div>`).join('') || '<p class="muted">No input group configured.</p>';
   $('#marketList').innerHTML = timings().slice(0, 8).map(([name]) => `<div class="market"><b>${esc(name.replaceAll('_', ' '))}</b><span>Active</span></div>`).join('') || '<p class="muted">No market timings available.</p>';
   renderManagers();
+  renderMarketControl();
 }
 function currentConfig() { return structuredClone(config()); }
 async function mutate(change) {
@@ -97,6 +99,64 @@ function renderManagers() {
       <button class="icon danger" data-action="delete-market">Delete</button>
     </div>`).join('') || '<p class="muted">No market timings available.</p>';
 }
+function marketFamilies() {
+  const data = {};
+  for (const [key, timing] of timings()) {
+    const base = key.replace(/_(OP|CL)$/, '');
+    const phase = key.endsWith('_CL') ? 'close' : 'open';
+    data[base] ||= { base, open: null, close: null, openKey: `${base}_OP`, closeKey: `${base}_CL` };
+    data[base][phase] = timing;
+  }
+  return Object.values(data);
+}
+function timeText(row) {
+  if (!row) return '--:--';
+  return String(row[0]?.hour ?? 0).padStart(2, '0') + ':' + String(row[0]?.minute ?? 0).padStart(2, '0');
+}
+function endText(row) {
+  if (!row) return '--:--';
+  return String(row[2]?.hour ?? 0).padStart(2, '0') + ':' + String(row[2]?.minute ?? 0).padStart(2, '0');
+}
+function prettyMarket(base) { return base.replaceAll('_', ' '); }
+function renderMarketControl() {
+  const cards = $('#marketCards'); const editor = $('#marketEditor');
+  if (!cards || !editor) return;
+  const families = marketFamilies();
+  if (!selectedMarketBase || !families.some(item => item.base === selectedMarketBase)) selectedMarketBase = families[0]?.base || '';
+  cards.innerHTML = families.map(item => {
+    const selected = item.base === selectedMarketBase;
+    const days = item.open?.[1] ?? item.close?.[1] ?? 0;
+    return `<button class="market-tile ${selected ? 'selected' : ''}" data-market-base="${esc(item.base)}">
+      <div class="tile-top"><b>${esc(prettyMarket(item.base))}</b><span class="${selected ? 'online' : 'online'}"></span></div>
+      <div class="tile-times"><span><small>OPEN</small><strong>${esc(endText(item.open))}</strong></span><span><small>CLOSE</small><strong>${esc(endText(item.close))}</strong></span></div>
+      <div class="tile-days"><small>${days} active days</small><i>•••••••</i></div>
+    </button>`;
+  }).join('') || '<p class="muted">No markets available.</p>';
+  const item = families.find(row => row.base === selectedMarketBase);
+  if (!item) { editor.innerHTML = '<h3>Select a market</h3>'; return; }
+  const open = item.open || [{ hour: 0, minute: 0, second: 0 }, 6, { hour: 0, minute: 0, second: 0 }];
+  const close = item.close || [{ hour: 0, minute: 0, second: 0 }, open[1], { hour: 0, minute: 0, second: 0 }];
+  const active = open[1] ?? close[1] ?? 0;
+  editor.innerHTML = `<div class="editor-title"><div><small>SELECTED MARKET</small><h2>${esc(prettyMarket(item.base))}</h2></div><span class="active-chip">Active</span></div>
+    <div class="editor-divider"></div>
+    <label class="editor-label">Open time</label><div class="time-pair"><input data-editor="openHour" type="number" min="0" max="23" value="${esc(open[2]?.hour ?? 0)}"><input data-editor="openMinute" type="number" min="0" max="59" value="${esc(open[2]?.minute ?? 0)}"></div>
+    <label class="editor-label">Close time</label><div class="time-pair"><input data-editor="closeHour" type="number" min="0" max="23" value="${esc(close[2]?.hour ?? 0)}"><input data-editor="closeMinute" type="number" min="0" max="59" value="${esc(close[2]?.minute ?? 0)}"></div>
+    <label class="editor-label">Active days</label><div class="day-count"><input data-editor="days" type="number" min="0" max="7" value="${esc(active)}"><span>days each week</span></div>
+    <div class="editor-divider"></div><label class="editor-label">Market status</label><div class="status-switch"><span class="switch-on"></span><b>Market is active</b></div>
+    <button class="primary editor-save" data-action="save-selected-market">Save Changes</button>`;
+}
+function saveSelectedMarket() {
+  const editor = $('#marketEditor'); if (!selectedMarketBase) return;
+  const get = name => Number(editor.querySelector(`[data-editor="${name}"]`)?.value || 0);
+  mutate(next => {
+    next.fixed_market_time ||= {};
+    const make = (key, startHour, startMinute, endHour, endMinute) => [{ hour: startHour, minute: startMinute, second: 0 }, get('days'), { hour: endHour, minute: endMinute, second: 0 }];
+    const oldOpen = next.fixed_market_time[`${selectedMarketBase}_OP`];
+    const oldClose = next.fixed_market_time[`${selectedMarketBase}_CL`];
+    next.fixed_market_time[`${selectedMarketBase}_OP`] = make(`${selectedMarketBase}_OP`, oldOpen?.[0]?.hour ?? 0, oldOpen?.[0]?.minute ?? 0, get('openHour'), get('openMinute'));
+    next.fixed_market_time[`${selectedMarketBase}_CL`] = make(`${selectedMarketBase}_CL`, oldClose?.[0]?.hour ?? get('openHour'), oldClose?.[0]?.minute ?? get('openMinute'), get('closeHour'), get('closeMinute'));
+  });
+}
 function groupData(next, name) {
   next.in_contacts ||= {};
   return next.in_contacts[name];
@@ -117,6 +177,7 @@ function setService(status) {
 nav.forEach(button => button.addEventListener('click', () => goto(button.dataset.page)));
 document.querySelectorAll('[data-goto]').forEach(button => button.addEventListener('click', () => goto(button.dataset.goto)));
 tabs.forEach(button => button.addEventListener('click', () => gotoTab(button.dataset.tab)));
+document.querySelectorAll('[data-tab-target]').forEach(button => button.addEventListener('click', () => gotoTab(button.dataset.tabTarget)));
 
 $('#groupManager').addEventListener('change', event => {
   const card = event.target.closest('.group-card'); if (!card) return;
@@ -157,26 +218,12 @@ $('#groupManager').addEventListener('click', event => {
     mutate(next => delete next.in_contacts[name].Director.market_overrides[row.dataset.market]);
   }
 });
-$('#marketManager').addEventListener('change', event => {
-  const line = event.target.closest('.timing-row'); if (!line) return;
-  const oldKey = line.dataset.marketKey;
-  mutate(next => {
-    const timing = next.fixed_market_time?.[oldKey]; if (!timing) return;
-    if (event.target.classList.contains('market-key')) {
-      const key = event.target.value.trim(); if (key && key !== oldKey) { next.fixed_market_time[key] = timing; delete next.fixed_market_time[oldKey]; }
-      return;
-    }
-    const field = event.target.dataset.time; if (!field) return;
-    if (field === 'day') timing[1] = Number(event.target.value || 0);
-    if (field === 'startHour') timing[0].hour = Number(event.target.value || 0);
-    if (field === 'startMinute') timing[0].minute = Number(event.target.value || 0);
-    if (field === 'endHour') timing[2].hour = Number(event.target.value || 0);
-    if (field === 'endMinute') timing[2].minute = Number(event.target.value || 0);
-  });
+$('#marketCards').addEventListener('click', event => {
+  const card = event.target.closest('[data-market-base]'); if (!card) return;
+  selectedMarketBase = card.dataset.marketBase; renderMarketControl();
 });
-$('#marketManager').addEventListener('click', event => {
-  const line = event.target.closest('.timing-row');
-  if (line && event.target.dataset.action === 'delete-market') mutate(next => delete next.fixed_market_time[line.dataset.marketKey]);
+$('#marketEditor').addEventListener('click', event => {
+  if (event.target.dataset.action === 'save-selected-market') saveSelectedMarket();
 });
 $('#addGroup').addEventListener('click', () => $('#groupDialog').showModal());
 $('#addMarket').addEventListener('click', () => $('#marketDialog').showModal());

@@ -142,6 +142,22 @@ class Session(Reply_processor, Scheduler):
             total += cut
         return "\n".join([f"*{market}*", *rows, f"*TOTAL={total}*"]), total, bets
 
+    def forward_unparsed(self, contact: str, market: str | None, text: str) -> bool:
+        target = self.director_target(contact, market, "fast_forward") if market else None
+        if not target:
+            # A no-market message has no per-market Director. Forward only when
+            # this customer has exactly one safe fallback target.
+            targets = {
+                str(row.get("fast_forward")) for row in self.rule_for(contact).get("Director", {}).values()
+                if row.get("fast_forward")
+            }
+            target = next(iter(targets)) if len(targets) == 1 else None
+        if not target:
+            print(f"No unambiguous fast_forward target for {contact}/{market or 'unknown'}", flush=True)
+            return False
+        self.send_message_to(target, text, priority=70)
+        return True
+
     def send_instant_table(self, contact: str, market: str, result_list: list) -> bool:
         target = self.director_target(contact, market, "table")
         if not target:
@@ -195,4 +211,10 @@ class Session(Reply_processor, Scheduler):
 
     def process_incoming(self, text: str, contact: str, message_id: str):
         """Original Reply_processor.reply() entry point used by the FastAPI bridge."""
+        # No recognised market means no valid HLA/DB operation. It may still be
+        # forwarded only when this customer's Director has one clear destination.
+        from .reply_processor import format_check
+        if not format_check(text, self.client_name):
+            self.forward_unparsed(contact, None, text)
+            return "", 0
         return self.reply(text, contact, message_id)

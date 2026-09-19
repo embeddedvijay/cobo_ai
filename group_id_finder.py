@@ -28,10 +28,18 @@ if not (project / "node_modules" / "@whiskeysockets" / "baileys").exists():
     print("Choose the project folder and run npm install there first.")
     sys.exit(1)
 
-auth = ask_path("Baileys auth folder (contains creds.json)", str(project / "auth_info"))
+candidates = sorted((project / "auth_info").glob("**/creds.json")) if (project / "auth_info").exists() else []
+default_auth = str(candidates[0].parent) if len(candidates) == 1 else str(project / "auth_info")
+if len(candidates) > 1:
+    print("Detected login folders:")
+    for item in candidates:
+        print(f"  - {item.parent}")
+auth = ask_path("Baileys auth folder (contains creds.json)", default_auth)
 if not (auth / "creds.json").exists():
-    print(f"Warning: creds.json not found in {auth}")
-    print("Baileys may show a QR login. Enter the exact auth subfolder if login already exists.")
+    print(f"Error: creds.json not found in {auth}")
+    print("Run this command to find it:")
+    print(f"  find {project / 'auth_info'} -type f -name creds.json")
+    sys.exit(1)
 
 node_code = r'''
 import process from 'node:process';

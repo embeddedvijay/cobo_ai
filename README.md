@@ -66,7 +66,15 @@ Incoming group message
 - Baileys keeps one serial queue per JID, waits for group resolution after
   reconnect, and reconnects automatically unless WhatsApp logs the account out.
 
-Check progress at:
+## Quick health check
+
+After starting the service, verify that the backend is available:
+
+```bash
+curl http://127.0.0.1:8015/health
+```
+
+Check processing and outbox progress at:
 
 ```text
 GET /status/vijay/vijay

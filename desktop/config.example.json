@@ -1,0 +1,48 @@
+{
+  "client_name": "vijay",
+  "dynamic_timing": {
+    "status": true,
+    "minutes": 3,
+    "max_total": 6000,
+    "ank": 1000,
+    "jodi": 200,
+    "sp": 150,
+    "dp": 100,
+    "tp": 50
+  },
+  "fixed_market_time": {
+    "KALYAN_DAY_OP": [
+      { "hour": 1, "minute": 0, "second": 0 },
+      6,
+      { "hour": 16, "minute": 27, "second": 0 }
+    ],
+    "KALYAN_DAY_CL": [
+      { "hour": 16, "minute": 35, "second": 0 },
+      6,
+      { "hour": 18, "minute": 27, "second": 0 }
+    ]
+  },
+  "in_contacts": {
+    "RAJSV_DAY5": {
+      "LD": 60,
+      "Limit": 100000,
+      "instant_cutting": true,
+      "Director": {
+        "KALYAN_DAY": {
+          "table": "ALL_MARKET",
+          "fast_forward": "ALL_MARKET"
+        }
+      },
+      "win_rate": {
+        "ANK": 9.5,
+        "Jodi": 95,
+        "SP": 150,
+        "DP": 300,
+        "TP": 600,
+        "FS": 10000,
+        "HS": 1000,
+        "Commission": 5
+      }
+    }
+  }
+}

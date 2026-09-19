@@ -1,0 +1,22 @@
+{
+  "name": "cobo-ai-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.coboai.desktop",
+    "productName": "Cobo AI",
+    "files": ["main.cjs", "preload.cjs", "src/**/*", "package.json"],
+    "win": { "target": ["nsis"] },
+    "linux": { "target": ["AppImage"] },
+    "mac": { "target": ["dmg"] }
+  }
+}

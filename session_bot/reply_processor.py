@@ -219,7 +219,8 @@ class Reply_processor(dynamic_time_manager):
                                 data["Action"] = action
                                 data["Result"] = result_list
                                 data["Total"] = total
-                                data["Settled"] = False
+                                instant = self.is_instant_cutting(contact)
+                                data["Settled"] = instant
                                 data["Analysis"] = hla_analysis
                                 data['dynamic_validation'] = True
                                 msg += action
@@ -229,6 +230,10 @@ class Reply_processor(dynamic_time_manager):
                                 msg = "❌"
                                 data['dynamic_validation'] = False
                             add_data(data)
+                            if data.get("dynamic_validation") is True:
+                                self.notify_limit_once(contact)
+                                if self.is_instant_cutting(contact):
+                                    self.send_instant_table(contact, market, result_list)
                             return msg,1
                         
                         else:

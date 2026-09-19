@@ -248,7 +248,7 @@ class Database:
             query["source_jid"] = source_jid
         return list(self.raw.find(query).sort([("message_timestamp", ASCENDING), ("received_at", ASCENDING)]).limit(limit))
 
-    def pending_input_group_settlements(self, client_name: str, session_name: str, limit: int = 10000) -> list[dict]:
+    def pending_input_group_settlements(self, client_name: str, session_name: str, limit: int = 10000, business_date: str | None = None) -> list[dict]:
         """Input plays still waiting for their one end-of-day group total.
 
         `source_jid` is the actual configured input group. Keeping this on the
@@ -261,6 +261,8 @@ class Database:
             "state": "processed",
             "settlement_state": {"$in": [None, "pending"]},
         }
+        if business_date:
+            query["business_date"] = business_date
         return list(self.raw.find(query).sort([
             ("source_jid", ASCENDING),
             ("business_date", ASCENDING),
@@ -354,7 +356,7 @@ class Database:
             payload["send_attempted_at"] = None
         self.outbox.update_one({"_id": ObjectId(message_id), "state": "uncertain"}, {"$set": payload})
 
-    def pending_output_settlements(self, client_name: str, session_name: str, output_jid: str, limit: int = 1000) -> list[dict]:
+    def pending_output_settlements(self, client_name: str, session_name: str, output_jid: str, limit: int = 1000, business_date: str | None = None) -> list[dict]:
         query = {
             "client_name": client_name,
             "session_name": session_name,
@@ -366,6 +368,8 @@ class Database:
             "delivery_message": {"$exists": True},
             "settlement_state": {"$in": [None, "pending"]},
         }
+        if business_date:
+            query["business_date"] = business_date
         return list(self.outbox.find(query).sort("created_at", ASCENDING).limit(limit))
 
     def reserve_output_settlement(self, outbox_id) -> bool:

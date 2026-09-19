@@ -2,14 +2,20 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def load_runtime_config() -> dict:
+    path = Path(os.getenv("COBO_RUNTIME_CONFIG_PATH", str(ROOT / "config.yaml"))).expanduser()
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
 def _client(client_name: str) -> dict:
-    config = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
+    config = load_runtime_config()
     for client in config.get("clients", []):
         if client.get("client_name") == client_name:
             return client

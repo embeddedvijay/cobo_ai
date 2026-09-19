@@ -1,5 +1,5 @@
 {
-  "client_name": "vijay",
+  "client_name": "Workspace",
   "dynamic_timing": {
     "status": true,
     "minutes": 3,
@@ -11,42 +11,34 @@
     "tp": 50
   },
   "fixed_market_time": {
-    "KALYAN_DAY_OP": [
-      { "hour": 1, "minute": 0, "second": 0 },
-      6,
-      { "hour": 16, "minute": 27, "second": 0 }
-    ],
-    "KALYAN_DAY_CL": [
-      { "hour": 16, "minute": 35, "second": 0 },
-      6,
-      { "hour": 18, "minute": 27, "second": 0 }
-    ]
+    "SRIDEVI_DAY_OP": [{"hour":1,"minute":0,"second":0},6,{"hour":11,"minute":49,"second":0}],
+    "SRIDEVI_DAY_CL": [{"hour":11,"minute":52,"second":0},6,{"hour":12,"minute":49,"second":0}],
+    "TIME_BAZAR_DAY_OP": [{"hour":1,"minute":0,"second":0},5,{"hour":13,"minute":14,"second":0}],
+    "TIME_BAZAR_DAY_CL": [{"hour":13,"minute":18,"second":0},5,{"hour":14,"minute":14,"second":0}],
+    "MADHUR_DAY_OP": [{"hour":1,"minute":0,"second":0},6,{"hour":13,"minute":39,"second":0}],
+    "MADHUR_DAY_CL": [{"hour":13,"minute":42,"second":0},6,{"hour":14,"minute":39,"second":0}],
+    "MILAN_DAY_OP": [{"hour":1,"minute":0,"second":0},5,{"hour":15,"minute":14,"second":0}],
+    "MILAN_DAY_CL": [{"hour":15,"minute":18,"second":0},5,{"hour":17,"minute":14,"second":0}],
+    "RAJDHANI_DAY_OP": [{"hour":1,"minute":0,"second":0},5,{"hour":15,"minute":16,"second":0}],
+    "RAJDHANI_DAY_CL": [{"hour":15,"minute":19,"second":0},5,{"hour":17,"minute":16,"second":0}],
+    "SUPREME_DAY_OP": [{"hour":1,"minute":0,"second":0},6,{"hour":15,"minute":49,"second":0}],
+    "SUPREME_DAY_CL": [{"hour":15,"minute":53,"second":0},6,{"hour":17,"minute":49,"second":0}],
+    "KALYAN_DAY_OP": [{"hour":1,"minute":0,"second":0},5,{"hour":16,"minute":12,"second":0}],
+    "KALYAN_DAY_CL": [{"hour":16,"minute":18,"second":0},5,{"hour":18,"minute":12,"second":0}],
+    "SRIDEVI_NIGHT_OP": [{"hour":17,"minute":0,"second":0},6,{"hour":19,"minute":28,"second":0}],
+    "SRIDEVI_NIGHT_CL": [{"hour":19,"minute":32,"second":0},6,{"hour":20,"minute":28,"second":0}],
+    "MADHUR_NIGHT_OP": [{"hour":17,"minute":0,"second":0},5,{"hour":20,"minute":39,"second":0}],
+    "MADHUR_NIGHT_CL": [{"hour":20,"minute":41,"second":0},5,{"hour":22,"minute":39,"second":0}],
+    "SUPREME_NIGHT_OP": [{"hour":17,"minute":45,"second":0},6,{"hour":20,"minute":58,"second":0}],
+    "SUPREME_NIGHT_CL": [{"hour":21,"minute":2,"second":0},6,{"hour":22,"minute":58,"second":0}],
+    "MILAN_NIGHT_OP": [{"hour":17,"minute":45,"second":0},5,{"hour":21,"minute":16,"second":0}],
+    "MILAN_NIGHT_CL": [{"hour":21,"minute":19,"second":0},5,{"hour":23,"minute":16,"second":0}],
+    "RAJDHANI_NIGHT_OP": [{"hour":17,"minute":45,"second":0},4,{"hour":21,"minute":41,"second":0}],
+    "RAJDHANI_NIGHT_CL": [{"hour":21,"minute":44,"second":0},4,{"hour":23,"minute":51,"second":0}],
+    "KALYAN_NIGHT_OP": [{"hour":18,"minute":0,"second":0},4,{"hour":21,"minute":43,"second":0}],
+    "KALYAN_NIGHT_CL": [{"hour":21,"minute":46,"second":0},4,{"hour":23,"minute":43,"second":0}],
+    "MAIN_BAZAR_NIGHT_OP": [{"hour":1,"minute":0,"second":0},4,{"hour":21,"minute":57,"second":0}],
+    "MAIN_BAZAR_NIGHT_CL": [{"hour":22,"minute":2,"second":0},4,{"hour":0,"minute":7,"second":0}]
   },
-  "in_contacts": {
-    "RAJSV_DAY5": {
-      "LD": 60,
-      "Limit": 100000,
-      "instant_cutting": true,
-      "Director": {
-        "all_table": "ALL_MARKET",
-        "all_fast_forward": "ALL_MARKET",
-        "market_overrides": {
-          "KALYAN_DAY": {
-            "table": "KALYAN_SPECIAL_TABLE",
-            "fast_forward": "KALYAN_SPECIAL_FF"
-          }
-        }
-      },
-      "win_rate": {
-        "ANK": 9.5,
-        "Jodi": 95,
-        "SP": 150,
-        "DP": 300,
-        "TP": 600,
-        "FS": 10000,
-        "HS": 1000,
-        "Commission": 5
-      }
-    }
-  }
+  "in_contacts": {}
 }

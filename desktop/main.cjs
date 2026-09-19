@@ -45,9 +45,14 @@ function runtimeConfigFromJson(value) {
   const client = normaliseConfig(value);
   const outputGroups = new Set();
   for (const detail of Object.values(client.in_contacts || {})) {
-    for (const director of Object.values(detail?.Director || {})) {
-      if (director?.table) outputGroups.add(String(director.table));
-      if (director?.fast_forward) outputGroups.add(String(director.fast_forward));
+    const director = detail?.Director || {};
+    // Default routes used by every market unless an override is supplied.
+    if (director.all_table) outputGroups.add(String(director.all_table));
+    if (director.all_fast_forward) outputGroups.add(String(director.all_fast_forward));
+    const rows = director.market_overrides || director; // also accepts old JSON
+    for (const route of Object.values(rows)) {
+      if (route?.table) outputGroups.add(String(route.table));
+      if (route?.fast_forward) outputGroups.add(String(route.fast_forward));
     }
   }
   const outputs = [...outputGroups];

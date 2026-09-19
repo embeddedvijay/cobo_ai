@@ -104,10 +104,8 @@ class Scheduler:
                 else:
                     data[k] = int(int(v)*contact_per)
         #data = get_client_table(client_name,market,to_settle=True)
-        # Preserve the pre-format table categories. The final text intentionally
-        # folds some jodi data into ank data, so end-of-day settlement must use
-        # this snapshot rather than trying to reverse-parse WhatsApp text.
-        settlement_bets = {str(key): int(value) for key, value in data.items() if int(value) > 0}
+        # Keep the settlement payload in the same shape as the WhatsApp table.
+        # It is created after OP/CL conversion below, not here.
         market_name = market
         if(("TIME" in market) or ("MAIN" in market)):
             if("DAY" in market):
@@ -197,6 +195,10 @@ class Scheduler:
         print(f"\t{market} Result {client_name}->{master_contact}\n{msg_table}")
         
         if(sum>0):
+            # For CL, open-jodi/sangam values may have been converted into
+            # close numbers. Snapshot the final outgoing table, otherwise the
+            # final quoted reply can falsely say NO WIN.
+            settlement_bets = {str(key): int(value) for key, value in data.items() if int(value) > 0}
             self.send_message_to(
                 master_contact, msg_table, market=market,
                 settlement_payload={"bets": settlement_bets, "total_play": sum},

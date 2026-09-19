@@ -58,6 +58,15 @@
     </form>
   </dialog>
 
+  <dialog id="overrideDialog" class="form-dialog small-dialog">
+    <form id="overrideForm">
+      <div class="dialog-head"><div><p class="eyebrow">MARKET-WISE DESTINATION</p><h2>Add destination</h2></div><button type="button" class="icon" data-close="overrideDialog">×</button></div>
+      <label>Market name<input name="market" required placeholder="Example: SRIDEVI_DAY"></label>
+      <div class="field-grid two"><label>Table destination<input name="table" placeholder="Output group name"></label><label>Forward destination<input name="forward" placeholder="Output group name"></label></div>
+      <div class="dialog-actions"><button type="button" class="secondary" data-close="overrideDialog">Cancel</button><button class="primary" type="submit">Add destination</button></div>
+    </form>
+  </dialog>
+
   <dialog id="marketDialog" class="form-dialog">
     <form id="marketForm">
       <div class="dialog-head"><div><p class="eyebrow">NEW MARKET</p><h2>Add market timing</h2></div><button type="button" class="icon" data-close="marketDialog">×</button></div>

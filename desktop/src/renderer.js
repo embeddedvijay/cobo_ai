@@ -2,6 +2,7 @@ const pages = [...document.querySelectorAll('.page')];
 const nav = [...document.querySelectorAll('.nav')];
 const tabs = [...document.querySelectorAll('.tab')];
 let summary;
+let overrideTargetGroup = '';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -144,11 +145,12 @@ $('#groupManager').addEventListener('click', event => {
   const name = card.dataset.group;
   if (event.target.dataset.action === 'delete-group') mutate(next => delete next.in_contacts[name]);
   if (event.target.dataset.action === 'add-override') {
-    const market = prompt('Market name, for example SRIDEVI_DAY'); if (!market) return;
-    mutate(next => {
-      const group = groupData(next, name); group.Director ||= {}; group.Director.market_overrides ||= {};
-      group.Director.market_overrides[market.trim()] = { table: group.Director.all_table || '', fast_forward: group.Director.all_fast_forward || '' };
-    });
+    overrideTargetGroup = name;
+    const group = config().in_contacts?.[name] || {};
+    const director = directorFor(group);
+    $('#overrideForm').elements.table.value = director.all_table || '';
+    $('#overrideForm').elements.forward.value = director.all_fast_forward || '';
+    $('#overrideDialog').showModal();
   }
   if (event.target.dataset.action === 'delete-override') {
     const row = event.target.closest('.override-row');
@@ -201,6 +203,23 @@ $('#groupForm').addEventListener('submit', event => {
   });
   event.currentTarget.reset();
   $('#groupDialog').close();
+});
+$('#overrideForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const data = new FormData(event.currentTarget);
+  const market = String(data.get('market')).trim();
+  if (!market || !overrideTargetGroup) return;
+  mutate(next => {
+    const group = groupData(next, overrideTargetGroup);
+    group.Director ||= {}; group.Director.market_overrides ||= {};
+    group.Director.market_overrides[market] = {
+      table: String(data.get('table') || '').trim(),
+      fast_forward: String(data.get('forward') || '').trim()
+    };
+  });
+  event.currentTarget.reset();
+  $('#overrideDialog').close();
+  overrideTargetGroup = '';
 });
 $('#marketForm').addEventListener('submit', event => {
   event.preventDefault();

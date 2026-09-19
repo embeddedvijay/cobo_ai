@@ -20,11 +20,19 @@ function saveState(next) {
   fs.writeFileSync(statePath(), JSON.stringify(next, null, 2));
 }
 
+function isOldDemoWorkspace(filePath) {
+  try {
+    const value = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return Object.keys(value?.in_contacts || {}).length === 1 &&
+      Boolean(value?.in_contacts?.RAJSV_DAY5) &&
+      Object.keys(value?.fixed_market_time || {}).length === 2;
+  } catch { return false; }
+}
 function ensureWorkspaceConfig() {
   const state = readState();
-  if (state.configPath && fs.existsSync(state.configPath)) return state;
+  if (state.configPath && fs.existsSync(state.configPath) && !isOldDemoWorkspace(state.configPath)) return state;
   fs.mkdirSync(configDir(), { recursive: true });
-  const configPath = path.join(configDir(), 'workspace-config.json');
+  const configPath = state.configPath || path.join(configDir(), 'workspace-config.json');
   fs.copyFileSync(defaultConfigPath(), configPath);
   const next = { ...state, configPath };
   saveState(next);

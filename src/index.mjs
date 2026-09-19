@@ -14,7 +14,9 @@ import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, useMultiFile
 import { Boom } from '@hapi/boom';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const config = YAML.parse(fs.readFileSync(path.join(root, 'config.yaml'), 'utf8'));
+// Desktop passes a generated JSON runtime file. JSON is also valid YAML.
+const runtimeConfigPath = process.env.COBO_RUNTIME_CONFIG_PATH || path.join(root, 'config.yaml');
+const config = YAML.parse(fs.readFileSync(runtimeConfigPath, 'utf8'));
 const wa = config.whatsapp || {};
 const backendUrl = process.env.BACKEND_URL || wa.backend_url || 'http://127.0.0.1:8015';
 const secret = process.env.BRIDGE_SECRET || '';

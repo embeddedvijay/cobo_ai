@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from .database import db
 from .settings import find_session
 from .settlement_service import settlement_service
@@ -48,6 +50,34 @@ class OutputSettlementService:
             "jodi": f"{open_ank}{close_ank}",
             "display": f"{value['OPANAL']}-{open_ank}{close_ank}-{value['CPANAL']}",
         }
+
+    @staticmethod
+    def _sent_text(message: dict | None) -> str:
+        """Get exact text accepted by Baileys for a previously delivered table."""
+        value = (message or {}).get("message", message or {})
+        return str(
+            value.get("conversation")
+            or (value.get("extendedTextMessage") or {}).get("text")
+            or (value.get("imageMessage") or {}).get("caption")
+            or ""
+        )
+
+    @classmethod
+    def _delivered_table_bets(cls, message: dict | None) -> dict[str, int]:
+        """Parse actual WhatsApp table text as the settlement source of truth.
+
+        Older rows may have a pre-conversion settlement_payload. The delivered
+        text is the only representation the operator saw, so it wins whenever
+        it contains number=amount rows.
+        """
+        bets: dict[str, int] = {}
+        for line in cls._sent_text(message).splitlines():
+            clean = line.strip().replace("*", "")
+            match = re.fullmatch(r"(\d{1,3})\s*=\s*(\d+)", clean)
+            if match:
+                number, amount = match.groups()
+                bets[number] = bets.get(number, 0) + _amount(amount)
+        return bets
 
     @staticmethod
     def _matches(bets: dict, values: dict) -> dict[str, list[tuple[str, int]]]:
@@ -224,8 +254,12 @@ class OutputSettlementService:
                 counts["waiting_result"] += 1
                 continue
             payload = item.get("settlement_payload") or {}
-            total_play = _amount(payload.get("total_play"))
-            matches = self._matches(payload.get("bets") or {}, values)
+            # Prefer actual delivered text. It fixes legacy CL rows where
+            # settlement_payload was captured before jodi/sangam conversion.
+            delivered_bets = self._delivered_table_bets(item.get("delivery_message"))
+            bets = delivered_bets or (payload.get("bets") or {})
+            total_play = _amount(payload.get("total_play")) or sum(_amount(value) for value in bets.values())
+            matches = self._matches(bets, values)
             reply, details = self._reply(str(item["market"]), values, matches, total_play, icons)
             db.enqueue({
                 "client_name": client_name,

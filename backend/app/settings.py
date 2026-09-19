@@ -8,10 +8,16 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def runtime_config_path() -> Path:
+    """Desktop launch writes a JSON file (valid YAML) and passes this path."""
+    value = os.getenv("COBO_RUNTIME_CONFIG_PATH")
+    return Path(value).expanduser() if value else ROOT / "config.yaml"
+
+
 @lru_cache(maxsize=1)
 def load_config() -> dict:
-    with (ROOT / "config.yaml").open("r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle)
+    with runtime_config_path().open("r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle) or {}
 
 
 def business_date(now=None) -> str:

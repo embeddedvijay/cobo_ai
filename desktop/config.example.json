@@ -28,9 +28,13 @@
       "Limit": 100000,
       "instant_cutting": true,
       "Director": {
-        "KALYAN_DAY": {
-          "table": "ALL_MARKET",
-          "fast_forward": "ALL_MARKET"
+        "all_table": "ALL_MARKET",
+        "all_fast_forward": "ALL_MARKET",
+        "market_overrides": {
+          "KALYAN_DAY": {
+            "table": "KALYAN_SPECIAL_TABLE",
+            "fast_forward": "KALYAN_SPECIAL_FF"
+          }
         }
       },
       "win_rate": {

@@ -1,0 +1,88 @@
+# This file is the only place where WhatsApp groups, processing mode and output
+# groups are configured. Group *names* are resolved to JIDs on connection.
+# You may also write a JID directly: 1203...@g.us or 1203...@newsletter.
+
+whatsapp:
+  # Baileys credentials. Keep this private; delete only when a fresh QR login is required.
+  auth_dir: ./auth_info/dust
+  backend_url: http://127.0.0.1:8015
+  reconnect_delay_ms: 2500
+  outbox_poll_ms: 500
+  # HLA uses one shared legacy Session, so every group must enter it in FIFO order.
+  max_parallel_jids: 1
+
+# 00:00–01:29 remains the preceding trading day. This keeps MAIN_BAZAR night
+# close plays, its Result document and its output-table settlement together.
+business_day_rollover: "01:30"
+
+mongo:
+  # Environment variables override these values.
+  url: mongodb://127.0.0.1:27017/
+  database: Market
+
+clients:
+  - client_name: vijay
+    fixed_market_time: vijay2
+    dynamic_timing:
+      status: true
+      max_total: 6000
+      ank: 1500
+      jodi: 300
+      sp: 150
+      dp: 100
+      tp: 50
+
+    sessions:
+      - session_name: vijay
+        # Optional override for a multi-account install. With one session the
+        # global whatsapp.auth_dir is used; never share one auth_dir across bots.
+        # auth_dir: ./auth_info/vijay
+        # Every normal input is parsed and replied immediately. "last" starts
+        # settlement replies, calculated from MongoDB's local Result document.
+        processing:
+          trigger_contains: "last"
+          quote_reply: true
+          # Backend HLA worker limit. Same source JID remains one-by-one;
+          # different source JIDs can use these parallel worker slots.
+          max_parallel_sources: 1
+          # Final quoted settlement is calculated from MongoDB Market/<date>
+          # Result document. Defaults match the legacy win multipliers.
+          settlement_rates:
+            ank: 9.5
+            jodi: 95
+            single_panna: 150
+            double_panna: 300
+            triple_panna: 600
+
+
+        # Input source groups. Text after ^ is the old LD/rate value and is retained
+        # as metadata. The group name before ^ is used to resolve the WhatsApp JID.
+        in_contacts:
+          
+          - 120363412539494316@g.us 
+          - 120363412059042594@g.us 
+
+
+        # Channels are optional. JIDs are recommended because newsletter display
+        # names are not always supplied by WhatsApp during connection.
+        in_channels: []
+
+        out_contacts:
+          # Valid transaction text is forwarded to these groups after HLA validation.
+          fast_forward:
+            other:
+              - 120363412741714599@g.us
+          # Use this section for fixed daily output. Each task is queued by backend
+          # and sent by Baileys; no polling of WhatsApp UI occurs.
+          table:
+            other:
+              - 120363412741714599@g.us
+
+        scheduler:
+          # Optional fixed messages. Add jobs only when needed.
+          # jobs:
+          #   - name: end_notice
+          #     cron: "0 0 23 * * *"  # second minute hour day month weekday
+          #     targets: [ALL_DAY_NIGHT]
+          #     message: "*_Vypar Last ⌚🕛_*\n*_Khabar Khabar ⏳_*"
+          jobs: []

@@ -1,0 +1,50 @@
+# Secrets and local runtime configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# WhatsApp linked-device credentials (never commit)
+auth_info/
+auth_info/**
+sessions_data/
+session_bot/*.session
+*.session
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python virtual environments and bytecode
+.venv/
+venv/
+env/
+backend/.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs, temporary files and generated runtime output
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.pid
+
+# Local IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Generated media/cache; source assets remain tracked
+downloaded_files/
+market_image_data/generated/

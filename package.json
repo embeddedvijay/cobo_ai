@@ -1,0 +1,19 @@
+{
+  "name": "dust-baileys-automation",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bash start.sh",
+    "bridge": "node src/index.mjs",
+    "check": "node --check src/index.mjs"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "axios": "^1.8.4",
+    "pino": "^9.6.0",
+    "qrcode-terminal": "^0.12.0",
+    "yaml": "^2.7.1"
+  }
+}

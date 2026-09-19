@@ -1,0 +1,10 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+pymongo==4.11.3
+PyYAML==6.0.2
+requests==2.32.3
+APScheduler==3.11.0
+fuzzywuzzy==0.18.0
+python-Levenshtein==0.27.1
+indic-transliteration==2.3.75
+jellyfish==1.1.3

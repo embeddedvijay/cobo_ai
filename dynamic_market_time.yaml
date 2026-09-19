@@ -1,0 +1,170 @@
+
+
+- market_name : SRIDEVI_DAY_OP
+  days : 6
+  start_time : [1,0]
+  end_time : [11,49]
+  date_of_change : 4
+- market_name : SRIDEVI_DAY_CL
+  days : 6
+  start_time : [11,52]
+  end_time : [12,49]
+  date_of_change : 4
+
+
+- market_name : TIME_BAZAR_DAY_OP
+  days : 5
+  start_time : [1,0]
+  end_time : [13,14]
+  date_of_change : 3
+- market_name : TIME_BAZAR_DAY_CL
+  days : 5
+  start_time : [13,18]
+  end_time : [14,14]
+  date_of_change : 3
+
+
+- market_name : MADHUR_DAY_OP
+  days : 6
+  start_time : [1,0]
+  end_time : [13,39]
+  date_of_change : 4
+- market_name : MADHUR_DAY_CL
+  days : 6
+  start_time : [13,42]
+  end_time : [14,39]
+  date_of_change : 4
+
+
+- market_name : MILAN_DAY_OP
+  days : 5
+  start_time : [1,0]
+  end_time : [15,14]
+  date_of_change : 3
+- market_name : MILAN_DAY_CL
+  days : 5
+  start_time : [15,18]
+  end_time : [17,14]
+  date_of_change : 3
+
+
+- market_name : RAJDHANI_DAY_OP
+  days : 5
+  start_time : [1,0]
+  end_time : [15,16]
+  date_of_change : 3
+- market_name : RAJDHANI_DAY_CL
+  days : 5
+  start_time : [15,19]
+  end_time : [17,16]
+  date_of_change : 3
+
+
+- market_name : SUPREME_DAY_OP
+  days : 6
+  start_time : [1,0]
+  end_time : [15,49]
+  date_of_change : 4
+- market_name : SUPREME_DAY_CL
+  days : 6
+  start_time : [15,53]
+  end_time : [17,49]
+  date_of_change : 4
+
+
+- market_name : KALYAN_DAY_OP
+  days : 5
+  start_time : [1,0]
+  end_time : [16,12]
+  date_of_change : 3
+- market_name : KALYAN_DAY_CL
+  days : 5
+  start_time : [16,18]
+  end_time : [18,12]
+  date_of_change : 5
+
+
+- market_name : SRIDEVI_NIGHT_OP
+  days : 6
+  start_time : [17,0]
+  end_time : [19,28]
+  date_of_change : 4
+- market_name : SRIDEVI_NIGHT_CL
+  days : 6
+  start_time : [19,32]
+  end_time : [20,28]
+  date_of_change : 4
+
+
+- market_name : MADHUR_NIGHT_OP
+  days : 5
+  start_time : [17,0]
+  end_time : [20,39]
+  date_of_change : 3
+- market_name : MADHUR_NIGHT_CL
+  days : 5
+  start_time : [20,41]
+  end_time : [22,39]
+  date_of_change : 3
+
+
+- market_name : SUPREME_NIGHT_OP
+  days : 6
+  start_time : [17,45]
+  end_time : [20,58]
+  date_of_change : 4
+- market_name : SUPREME_NIGHT_CL
+  days : 6
+  start_time : [21,2]
+  end_time : [22,58]
+  date_of_change : 4
+
+
+- market_name : MILAN_NIGHT_OP
+  days : 5
+  start_time : [17,45]
+  end_time : [21,16]
+  date_of_change : 3
+- market_name : MILAN_NIGHT_CL
+  days : 5
+  start_time : [21,19]
+  end_time : [23,16]
+  date_of_change : 3
+
+
+- market_name : RAJDHANI_NIGHT_OP
+  days : 4
+  start_time : [17,45]
+  end_time : [21,41]
+  date_of_change : 2
+- market_name : RAJDHANI_NIGHT_CL
+  days : 4
+  start_time : [21,44]
+  end_time : [23,51]
+  date_of_change : 2
+
+
+- market_name : KALYAN_NIGHT_OP
+  days : 4
+  start_time : [18,0]
+  end_time : [21,43]
+  date_of_change : 2
+- market_name : KALYAN_NIGHT_CL
+  days : 4
+  start_time : [21,46]
+  end_time : [23,43]
+  date_of_change : 2
+
+
+- market_name : MAIN_BAZAR_NIGHT_OP
+  days : 4
+  start_time : [1,0]
+  end_time : [21,57]
+  date_of_change : 2
+- market_name : MAIN_BAZAR_NIGHT_CL
+  days : 4
+  start_time : [22,2]
+  end_time : [0,7]
+  date_of_change : 2
+
+#Last Modified on 2025-05-09 17:46:45.133402

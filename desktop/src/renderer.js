@@ -8,9 +8,7 @@ function goto(name) {
 }
 
 function contacts() {
-  return (summary?.config?.sessions || []).flatMap(session =>
-    Object.entries(session.in_contacts || {}).map(([name, data]) => ({ name, ...data }))
-  );
+  return Object.entries(summary?.config?.in_contacts || {}).map(([name, data]) => ({ name, ...data }));
 }
 
 function markets() { return Object.keys(summary?.config?.fixed_market_time || {}); }
@@ -19,7 +17,7 @@ function renderSummary(next) {
   summary = next || null;
   const client = summary?.clientName || 'Cobo AI';
   document.querySelector('#clientName').textContent = client;
-  document.querySelector('#clientEmail').textContent = summary ? `${summary.sessionNames.join(', ')} · local JSON` : 'Local desktop control';
+  document.querySelector('#clientEmail').textContent = summary ? `local JSON · ${summary.contactCount} groups` : 'Local desktop control';
   document.querySelector('#configState').textContent = summary ? 'Loaded' : 'Not loaded';
   document.querySelector('#contactCount').textContent = `${summary?.contactCount || 0} contacts`;
   document.querySelector('#marketCount').textContent = `${summary?.marketCount || 0} markets`;
@@ -34,7 +32,7 @@ function renderSummary(next) {
     `<div class="market"><b>${name.replaceAll('_', ' ')}</b><span>Configured</span></div>`
   ).join('') || '<p class="muted">No market timing data.</p>';
   document.querySelector('#configSummary').innerHTML = summary
-    ? `<dl><dt>Client</dt><dd>${client}</dd><dt>Sessions</dt><dd>${summary.sessionNames.join(', ') || '—'}</dd><dt>Customers</dt><dd>${summary.contactCount}</dd><dt>Markets</dt><dd>${summary.marketCount}</dd></dl>`
+    ? `<dl><dt>Client</dt><dd>${client}</dd><dt>Input groups</dt><dd>${summary.contactCount}</dd><dt>Customers</dt><dd>${summary.contactCount}</dd><dt>Markets</dt><dd>${summary.marketCount}</dd></dl>`
     : 'No JSON configuration imported.';
 }
 

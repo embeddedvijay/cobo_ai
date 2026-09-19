@@ -24,6 +24,28 @@ function contacts() { return Object.entries(getConfig().in_contacts || {}); }
 function pretty(key) { return key.replace(/_(OP|CL)$/, '').replaceAll('_', ' '); }
 function phase(key) { return key.endsWith('_CL') ? 'Close' : 'Open'; }
 function hm(row, index) { return String(row?.[index]?.hour ?? 0).padStart(2,'0') + ':' + String(row?.[index]?.minute ?? 0).padStart(2,'0'); }
+function daysFor(key, row) {
+  const saved = getConfig().market_days?.[key];
+  return Array.isArray(saved) ? saved.map(Number) : Array.from({ length: Number(row?.[1] || 0) }, (_, index) => index);
+}
+function destinationNames(kind, current = '') {
+  const values = new Set(current ? [current] : []);
+  contacts().forEach(([, group]) => {
+    const director = group.Director || {};
+    const field = kind === 'table' ? 'all_table' : 'all_fast_forward';
+    if (director[field]) values.add(String(director[field]));
+    Object.values(director.market_overrides || {}).forEach(route => {
+      if (route?.[kind]) values.add(String(route[kind]));
+    });
+  });
+  return [...values].sort((a, b) => a.localeCompare(b));
+}
+function destinationSelect(kind, current, attribute) {
+  const label = kind === 'table' ? 'Select table group' : 'Select forward group';
+  const options = destinationNames(kind, current)
+    .map(value => `<option value="${esc(value)}" ${value === current ? 'selected' : ''}>${esc(value)}</option>`).join('');
+  return `<select ${attribute}><option value="" ${current ? '' : 'selected'}>${label}</option>${options}</select>`;
+}
 
 async function mutate(change) {
   try {
@@ -46,8 +68,8 @@ function render(next) {
     ['Service Status', $('#botState')?.textContent || 'Stopped', 'Local service'],
     ['Today Play', '—', 'Available while service runs']
   ].map((x,i) => `<div class="metric metric-${i}"><small>${x[0]}</small><strong>${esc(x[1])}</strong><span>${x[2]}</span></div>`).join('');
-  $('#customerList').innerHTML = contacts().map(([name, item]) => `<div class="row"><b>${esc(name)}</b><span>LD ${esc(item.LD ?? 100)}% · Limit ₹${esc(item.Limit ?? 0)}</span></div>`).join('') || '<p class="muted">No input group configured.</p>';
-  $('#marketList').innerHTML = timingRows().slice(0,8).map(([name]) => `<div class="market"><b>${esc(pretty(name))}</b><span>Active</span></div>`).join('');
+  $('#customerList').innerHTML = contacts().map(([name, item]) => `<div class="crm-customer-row"><b>${esc(name)}</b><span>${esc(item.LD ?? 100)}%</span><span>₹${esc(item.Limit ?? 0)}</span><span>${item.instant_cutting ? 'Instant' : 'Scheduled'}</span></div>`).join('') || '<p class="muted">No input group configured.</p>';
+  $('#marketList').innerHTML = timingRows().slice(0,8).map(([name, row]) => `<div class="crm-market-row"><div><b>${esc(pretty(name))}</b><small>${phase(name)} · ${hm(row, 0)} – ${hm(row, 2)}</small></div><span>● Active</span></div>`).join('');
   renderTimingTable();
   renderGroups();
 }
@@ -63,11 +85,12 @@ function renderTimingTable() {
   </button>`).join('');
   const current = getConfig().fixed_market_time?.[selectedMarketKey];
   if (!current) { editor.innerHTML = ''; return; }
+  const selectedDays = daysFor(selectedMarketKey, current);
   editor.innerHTML = `<div class="edit-head"><div class="edit-icon">＋</div><div><h2>Add / Edit Market</h2><p>Create or update market timings</p></div></div>
     <label>Market Name<input value="${esc(pretty(selectedMarketKey))}" disabled></label>
-    <label>Phase</label><div class="phase-toggle"><button class="${selectedMarketKey.endsWith('_OP') ? 'on' : ''}">Open</button><button class="${selectedMarketKey.endsWith('_CL') ? 'on' : ''}">Close</button></div>
+    <label>Phase</label><div class="phase-toggle"><button data-phase="OP" class="${selectedMarketKey.endsWith('_OP') ? 'on' : ''}">Open</button><button data-phase="CL" class="${selectedMarketKey.endsWith('_CL') ? 'on' : ''}">Close</button></div>
     <div class="editor-time-grid"><label>Start Time<div><input data-edit="startHour" type="number" min="0" max="23" value="${esc(current[0]?.hour ?? 0)}"><input data-edit="startMinute" type="number" min="0" max="59" value="${esc(current[0]?.minute ?? 0)}"></div></label><label>End Time<div><input data-edit="endHour" type="number" min="0" max="23" value="${esc(current[2]?.hour ?? 0)}"><input data-edit="endMinute" type="number" min="0" max="59" value="${esc(current[2]?.minute ?? 0)}"></div></label></div>
-    <label>Active Days</label><div class="weekday-row">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day,i)=>`<span class="${i < Number(current[1] || 0) ? 'checked' : ''}">${day}</span>`).join('')}</div>
+    <label>Active Days</label><div class="weekday-row">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day,index)=>`<button type="button" data-day="${index}" class="${selectedDays.includes(index) ? 'checked' : ''}">${day}</button>`).join('')}</div>
     <button class="primary editor-save" data-action="save-market">▣ &nbsp; Save Market</button>`;
 }
 function renderGroups() {
@@ -77,7 +100,7 @@ function renderGroups() {
     return `<article class="group-card" data-group="${esc(name)}">
       <div class="group-head"><div><small>CUSTOMER GROUP</small><input class="group-name" value="${esc(name)}"></div><div class="active-group">● Active</div><button class="icon danger" data-action="delete-group">⌫</button></div>
       <div class="customer-fields"><label>LD %<input data-field="LD" type="number" min="0" max="100" value="${esc(group.LD ?? 100)}"></label><label>Limit (₹)<input data-field="Limit" type="number" min="0" value="${esc(group.Limit ?? 0)}"></label><label class="cutting-label">⚡ Instant Cutting<input data-field="instant_cutting" type="checkbox" ${group.instant_cutting ? 'checked' : ''}></label><label>All Table<input data-director="all_table" value="${esc(director.all_table || '')}" placeholder="Group name"></label><label>All Forward<input data-director="all_fast_forward" value="${esc(director.all_fast_forward || '')}" placeholder="Group name"></label></div>
-      <div class="group-lower"><div class="override-box"><div class="mini-title">⌄ Market-wise destinations <button data-action="add-override">＋ Add</button></div>${Object.entries(overrides).map(([market,route])=>`<div class="override-row" data-market="${esc(market)}"><b>${esc(market)}</b><input data-route="table" value="${esc(route.table || '')}" placeholder="Table destination"><input data-route="fast_forward" value="${esc(route.fast_forward || '')}" placeholder="Forward destination"><button class="icon danger" data-action="delete-override">−</button></div>`).join('') || '<p class="muted">All markets use default destinations.</p>'}</div>
+      <div class="group-lower"><div class="override-box"><div class="mini-title">⌄ Market-wise destinations <button data-action="add-override">＋ Add</button></div>${Object.entries(overrides).map(([market,route])=>`<div class="override-row" data-market="${esc(market)}"><b>${esc(market)}</b>${destinationSelect('table', route.table || '', 'data-route="table"')}${destinationSelect('fast_forward', route.fast_forward || '', 'data-route="fast_forward"')}<button class="icon danger" data-action="delete-override">−</button></div>`).join('') || '<p class="muted">All markets use default destinations.</p>'}</div>
       <div class="rates-box"><div class="mini-title">Win Rate</div><div class="rate-grid">${['ANK','Jodi','SP','DP','TP','FS','HS','Commission'].map(key=>`<label>${key}<input data-rate="${key}" type="number" value="${esc(group.win_rate?.[key] ?? '')}"></label>`).join('')}</div></div></div>
     </article>`;
   }).join('') || '<div class="empty-groups"><b>No input groups yet</b><span>Use Add Input Group to create the first customer rule.</span></div>';
@@ -98,8 +121,16 @@ function groupChange(event) {
 function groupClick(event) {
   const card=event.target.closest('.group-card'); if(!card) return; const name=card.dataset.group;
   if(event.target.dataset.action==='delete-group') mutate(next=>delete next.in_contacts[name]);
-  if(event.target.dataset.action==='add-override'){overrideTargetGroup=name;$('#overrideDialog').showModal();}
+  if(event.target.dataset.action==='add-override'){overrideTargetGroup=name;prepareOverrideDialog();$('#overrideDialog').showModal();}
   if(event.target.dataset.action==='delete-override'){const row=event.target.closest('.override-row');mutate(next=>delete next.in_contacts[name].Director.market_overrides[row.dataset.market]);}
+}
+function prepareOverrideDialog() {
+  const markets = Object.keys(getConfig().fixed_market_time || {}).map(pretty)
+    .filter((value, index, all) => all.indexOf(value) === index).sort();
+  $('#overrideMarket').innerHTML = '<option value="" selected>Select market</option>' + markets.map(value => `<option value="${esc(value.replaceAll(' ', '_'))}">${esc(value)}</option>`).join('');
+  const optionMarkup = kind => destinationNames(kind).map(value => `<option value="${esc(value)}">${esc(value)}</option>`).join('');
+  $('#overrideTable').innerHTML = '<option value="">Select table group</option>' + optionMarkup('table');
+  $('#overrideForward').innerHTML = '<option value="">Select forward group</option>' + optionMarkup('fast_forward');
 }
 function log(value){const out=$('#logs');out.textContent=(out.textContent+'\n'+value).trim().slice(-12000);out.scrollTop=out.scrollHeight;}
 function setService(status){$('#botState').textContent=status.running?'Running':'Stopped';$('#botDot').classList.toggle('running',Boolean(status.running));if(status.code!==undefined)log('Service stopped with code '+status.code);}
@@ -109,7 +140,13 @@ document.querySelectorAll('[data-goto]').forEach(button=>button.addEventListener
 tabs.forEach(button=>button.addEventListener('click',()=>gotoTab(button.dataset.tab)));
 document.querySelectorAll('[data-tab-target]').forEach(button=>button.addEventListener('click',()=>gotoTab(button.dataset.tabTarget)));
 $('#marketRows').addEventListener('click',event=>{const item=event.target.closest('[data-market-key]');if(item){selectedMarketKey=item.dataset.marketKey;renderTimingTable();}});
-$('#marketEditor').addEventListener('click',event=>{if(event.target.dataset.action!=='save-market')return;const edit=$('#marketEditor');const val=k=>Number(edit.querySelector('[data-edit="'+k+'"]').value||0);mutate(next=>{const row=next.fixed_market_time[selectedMarketKey];row[0]={hour:val('startHour'),minute:val('startMinute'),second:0};row[2]={hour:val('endHour'),minute:val('endMinute'),second:0};});});
+$('#marketEditor').addEventListener('click',event=>{
+  const phaseButton=event.target.closest('[data-phase]');
+  if(phaseButton){const key=selectedMarketKey.replace(/_(OP|CL)$/, `_${phaseButton.dataset.phase}`);if(getConfig().fixed_market_time?.[key]){selectedMarketKey=key;renderTimingTable();}return;}
+  const dayButton=event.target.closest('[data-day]');
+  if(dayButton){const day=Number(dayButton.dataset.day);mutate(next=>{next.market_days ||= {};const row=next.fixed_market_time[selectedMarketKey];const current=next.market_days[selectedMarketKey] || Array.from({length:Number(row?.[1]||0)},(_,index)=>index);const days=new Set(current.map(Number));days.has(day)?days.delete(day):days.add(day);const ordered=[...days].sort((a,b)=>a-b);next.market_days[selectedMarketKey]=ordered;row[1]=ordered.length;});return;}
+  if(event.target.dataset.action!=='save-market')return;const edit=$('#marketEditor');const val=k=>Number(edit.querySelector('[data-edit="'+k+'"]').value||0);mutate(next=>{const row=next.fixed_market_time[selectedMarketKey];row[0]={hour:val('startHour'),minute:val('startMinute'),second:0};row[2]={hour:val('endHour'),minute:val('endMinute'),second:0};});
+});
 ['#groupManager','#groupManagerSecondary'].forEach(id=>{const node=$(id);if(node){node.addEventListener('change',groupChange);node.addEventListener('click',groupClick);}});
 ['#addGroup','#addGroupSecondary'].forEach(id=>{const node=$(id);if(node)node.addEventListener('click',()=>$('#groupDialog').showModal());});
 $('#addMarket').addEventListener('click',()=>$('#marketDialog').showModal());
@@ -120,5 +157,6 @@ $('#marketForm').addEventListener('submit',event=>{event.preventDefault();const 
 async function chooseWorkspace(){try{const state=await window.cobo.chooseBotDirectory();log(state.botDirectory?'Workspace folder: '+state.botDirectory:'Workspace folder unchanged.');}catch(error){alert(error.message);}}
 async function startService(){try{await window.cobo.startBot();log('Service started.');}catch(error){alert(error.message);}}
 $('#chooseBot').addEventListener('click',chooseWorkspace);$('#launchService').addEventListener('click',startService);$('#stopBot').addEventListener('click',()=>window.cobo.stopBot());
+$('#dashboardStart').addEventListener('click',startService);
 window.cobo.onLog(log);window.cobo.onStatus(setService);
 (async()=>{const state=await window.cobo.state();render(state.summary);setService(state);})();

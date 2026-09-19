@@ -125,7 +125,7 @@ class OutputSettlementService:
             f"*TOTAL PLAY = {total_play}*",
         ])
 
-    def _queue_input_group_totals(self, client_name: str, session_name: str, trigger_message_id: str, icons: dict, limit: int) -> dict:
+    def _queue_input_group_totals(self, client_name: str, session_name: str, trigger_message_id: str, icons: dict, limit: int, business_date: str) -> dict:
         """Queue one end-total per input group, based only on that group's plays.
 
         A raw play is marked queued only when its local Result exists and the
@@ -137,7 +137,7 @@ class OutputSettlementService:
         groups: dict[tuple[str, str], dict] = {}
         counts = {"input_group_totals_queued": 0, "input_waiting_result": 0, "input_skipped": 0}
 
-        for raw in db.pending_input_group_settlements(client_name, session_name, limit):
+        for raw in db.pending_input_group_settlements(client_name, session_name, limit, business_date=business_date):
             transaction = db.legacy_transaction(raw)
             if not transaction:
                 db.skip_settlement(raw["_id"], "legacy_transaction_not_found")
@@ -209,7 +209,9 @@ class OutputSettlementService:
         result_cache: dict[str, dict] = {}
         counts = {"queued": 0, "waiting_result": 0, "group_total_queued": False}
         queued_details: list[dict] = []
-        for item in db.pending_output_settlements(client_name, session_name, output_jid, limit):
+        active_business_date = db.date
+        # A historical missing result must never block today's final message.
+        for item in db.pending_output_settlements(client_name, session_name, output_jid, limit, business_date=active_business_date):
             if not db.reserve_output_settlement(item["_id"]):
                 continue
             base_market, side = self._market_parts(str(item["market"]))
@@ -264,7 +266,7 @@ class OutputSettlementService:
         # output replies and output final total go first, then one total per
         # input group calculated from only that group's MongoDB play records.
         if not counts["waiting_result"]:
-            counts.update(self._queue_input_group_totals(client_name, session_name, trigger_message_id, icons, limit * 10))
+            counts.update(self._queue_input_group_totals(client_name, session_name, trigger_message_id, icons, limit * 10, active_business_date))
         else:
             counts.update({"input_group_totals_queued": 0, "input_waiting_result": 0, "input_skipped": 0})
         return counts

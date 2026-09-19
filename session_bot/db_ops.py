@@ -295,6 +295,33 @@ def get_result_of_market(market:str):
     return data
 
 
+def contact_total_play(client_name: str, contact_name: str) -> int:
+    row = next(_collection().aggregate([
+        {"$match": {"Client": client_name, "Contact": contact_name, "Total": {"$exists": True}}},
+        {"$group": {"_id": None, "total": {"$sum": "$Total"}}},
+    ]), None)
+    return int((row or {}).get("total", 0))
+
+
+def claim_limit_notice(client_name: str, contact_name: str, limit: int) -> bool:
+    """Return true only once per business-day/group once its total reaches limit."""
+    if int(limit or 0) <= 0 or contact_total_play(client_name, contact_name) < int(limit):
+        return False
+    result = _collection().update_one(
+        {"LimitNotice": True, "Client": client_name, "Contact": contact_name},
+        {"$setOnInsert": {
+            "LimitNotice": True,
+            "Client": client_name,
+            "Contact": contact_name,
+            "Limit": int(limit),
+            "TotalAtNotice": contact_total_play(client_name, contact_name),
+            "Time": datetime.datetime.now().time().strftime("%H:%M:%S"),
+        }},
+        upsert=True,
+    )
+    return result.upserted_id is not None
+
+
 ################################## Update Data #######################################
 def settle_client_result(object_ids:list):
     result = _collection().update_many(

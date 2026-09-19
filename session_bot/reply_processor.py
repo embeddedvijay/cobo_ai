@@ -193,20 +193,12 @@ class Reply_processor(dynamic_time_manager):
 
                 if(flag == 'amt'):
                     msg += "✅✅"
-                    self.send_message_to(self.out_contacts['fast_forward'][market],text)
-                    if(result_list and total):
-                        data["Result"] = result_list                
-                    data["Action"] = action + "✅✅"
-                    data["Analysis"] = hla_analysis
-                    add_data(data)
+                    self.forward_unparsed(contact, market, text)
                     return msg,1
                 
                 elif( action == "✅✅"):
                     msg += action
-                    self.send_message_to(self.out_contacts['fast_forward'][market],text)
-                    data["Action"] = msg 
-                    data["Analysis"] = hla_analysis
-                    add_data(data)
+                    self.forward_unparsed(contact, market, text)
                     return msg,1
                 
                 if self.dynamic_timing.get('status',False) and (

@@ -108,7 +108,8 @@ function mutate(callback) {
   catch (error) { $('#saveMessage').textContent = `Invalid JSON: ${error.message}`; }
 }
 
-$('#groupManager').addEventListener('input', event => {
+$('#groupManager').addEventListener('change', event => {
+  if (event.target.closest('.override-row')) return;
   const card = event.target.closest('[data-group]'); if (!card) return;
   const oldName = card.dataset.group;
   mutate(config => {
@@ -152,7 +153,7 @@ $('#groupManager').addEventListener('click', event => {
     mutate(config => delete config.in_contacts[row.dataset.group].Director.market_overrides[row.dataset.market]);
   }
 });
-$('#marketManager').addEventListener('input', event => {
+$('#marketManager').addEventListener('change', event => {
   const row = event.target.closest('[data-market-key]'); if (!row) return;
   const oldKey = row.dataset.marketKey;
   mutate(config => {

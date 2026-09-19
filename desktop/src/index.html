@@ -32,34 +32,30 @@
       <section id="results" class="page"><header><div><p class="eyebrow">RESULTS &amp; MARKETS</p><h1>Market view</h1></div><button class="primary" data-goto="config">Edit Timings</button></header><div class="panel empty"><h3>Live market data</h3><p>Today’s market and result details will appear here while the service is running.</p></div></section>
       <section id="transactions" class="page"><header><div><p class="eyebrow">TRANSACTIONS</p><h1>Customer activity</h1></div></header><div class="panel empty"><h3>Transaction history</h3><p>Saved customer entries and output records will appear here.</p></div></section>
       <section id="config" class="page">
-        <header class="control-header">
-          <div><p class="eyebrow">SETTINGS</p><h1>Market Control</h1><p class="subtitle">Manage market hours, customer rules and delivery in one place.</p></div>
-          <div class="save-state"><span>✓</span><div><b>All changes saved</b><small>Saved locally</small></div></div>
+        <header class="premium-header">
+          <div><p class="eyebrow">CRM CONFIGURATION</p><h1>Configuration</h1><p class="subtitle">Manage markets, timings and customer routing</p></div>
+          <div class="header-note">ⓘ Standard market timings are already loaded. Edit and save only if needed.</div>
+          <div class="top-date">● System Online&nbsp;&nbsp; | &nbsp;&nbsp;Today</div>
         </header>
-        <div class="control-tabs">
-          <button class="control-tab active" data-tab="timings">Market Hours</button>
-          <button class="control-tab" data-tab="groups">Customer Rules</button>
-          <button class="control-tab" data-tab="delivery">Delivery</button>
+        <div class="premium-tabs">
+          <button class="control-tab active" data-tab="timings">⚙ General</button>
+          <button class="control-tab active-tab" data-tab="timings">◷ Market Timings</button>
+          <button class="control-tab" data-tab="groups">♟ Input Groups</button>
+          <button class="control-tab" data-tab="delivery">⌘ Output Destinations</button>
         </div>
-
         <section class="tab-page active" id="timings">
-          <div class="market-control-layout">
-            <div class="market-grid-wrap">
-              <button class="add-market-card" id="addMarket"><span>＋</span><b>Add Market</b><small>Create a market and its timing</small></button>
-              <div id="marketCards" class="market-card-grid"></div>
-              <button class="advanced-strip">◷ <span><b>Advanced timings</b><small>Holiday hours, special days and custom schedules.</small></span><em>⌄</em></button>
-            </div>
-            <aside id="marketEditor" class="selected-market-panel"></aside>
+          <div class="premium-config-grid">
+            <article class="timings-panel">
+              <div class="section-head"><div><h2>◷ Market Timings</h2><p>Define market open/close timings and active days</p></div><button class="search-button">⌕&nbsp; Search markets...</button></div>
+              <div class="timing-table-head"><span>Market</span><span>Phase</span><span>Start Time</span><span>End Time</span><span>Active Days</span><span>Status</span><span>Actions</span></div>
+              <div id="marketRows" class="timing-table-body"></div>
+            </article>
+            <aside id="marketEditor" class="market-edit-panel"></aside>
           </div>
+          <article class="input-rules-panel"><div class="section-head"><div><h2>♟ Input Groups</h2><p>Configure customer group limits and routing behaviour</p></div><button class="primary" id="addGroup">＋ Add Input Group</button></div><div id="groupManager"></div></article>
         </section>
-
-        <section class="tab-page" id="groups">
-          <article class="customer-rules-panel"><div class="rules-head"><div><p class="eyebrow">CUSTOMER RULES</p><h2>Input groups</h2><p>Set limits, rates and delivery destinations for each customer group.</p></div><button class="primary" id="addGroup">＋ Add Input Group</button></div><div id="groupManager"></div></article>
-        </section>
-
-        <section class="tab-page" id="delivery">
-          <article class="delivery-empty"><div class="delivery-icon">↗</div><h2>Delivery destinations</h2><p>Choose a customer rule to manage its default and market-wise destinations.</p><button class="primary" data-tab-target="groups">Open Customer Rules</button></article>
-        </section>
+        <section class="tab-page" id="groups"><article class="input-rules-panel"><div class="section-head"><div><h2>♟ Input Groups</h2><p>Configure customer group limits and routing behaviour</p></div><button class="primary" id="addGroupSecondary">＋ Add Input Group</button></div><div id="groupManagerSecondary"></div></article></section>
+        <section class="tab-page" id="delivery"><article class="delivery-empty"><div class="delivery-icon">↗</div><h2>Output Destinations</h2><p>Select an input group to manage its default and market-wise destinations.</p><button class="primary" data-tab-target="groups">Open Input Groups</button></article></section>
       </section>
     </main>
   </div>

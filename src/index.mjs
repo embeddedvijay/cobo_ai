@@ -31,6 +31,29 @@ const isJid = value => /@(g\.us|newsletter|s\.whatsapp\.net|lid)$/.test(String(v
 const contactName = value => normalise(String(value).split('^', 1)[0]);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+// A typed destination is resolved against the account's current WhatsApp
+// groups on every connection. Keep this deliberately conservative: it exists
+// for a small spelling mistake, never to guess between similarly named groups.
+function nameSimilarity(leftValue, rightValue) {
+  const left = normalise(leftValue).toLowerCase();
+  const right = normalise(rightValue).toLowerCase();
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= right.length; column += 1) {
+      current[column] = Math.min(
+        current[column - 1] + 1,
+        previous[column] + 1,
+        previous[column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1),
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+  return 1 - previous[right.length] / Math.max(left.length, right.length);
+}
+
 async function withGlobalLimit(task) {
   const max = Math.max(1, Number(wa.max_parallel_jids || 8));
   if (activeTasks >= max) await new Promise(resolve => waitingTasks.push(resolve));
@@ -71,23 +94,40 @@ async function resolveGroups(runtime) {
     if (!byName.has(key)) byName.set(key, []);
     byName.get(key).push(group);
   }
-  const jidForName = item => {
+  const jidForName = (item, { allowFuzzy = false } = {}) => {
     if (isJid(item)) return item;
-    const matches = byName.get(normalise(item).toLowerCase()) || [];
+    const requestedName = normalise(item);
+    const matches = byName.get(requestedName.toLowerCase()) || [];
     if (matches.length === 1) return matches[0].id;
     if (matches.length > 1) log.error({ item, jids: matches.map(group => group.id) }, 'Duplicate WhatsApp group name; rename one group so config remains name-only');
+    if (!allowFuzzy || requestedName.length < 5) return null;
+    const candidates = Object.values(groups)
+      .map(group => ({ group, score: nameSimilarity(requestedName, group.subject) }))
+      .filter(candidate => candidate.score >= 0.88)
+      .sort((a, b) => b.score - a.score);
+    const [best, second] = candidates;
+    // A second close result makes this unsafe. Do not route a customer's game
+    // until the user chooses/types an unambiguous group name.
+    if (best && (!second || best.score - second.score >= 0.05)) {
+      log.warn({ requested: item, resolved: best.group.subject, score: Math.round(best.score * 100) }, 'Fuzzy WhatsApp output group match');
+      return best.group.id;
+    }
+    if (best) log.error({ item, candidates: candidates.slice(0, 2).map(candidate => ({ name: candidate.group.subject, score: Math.round(candidate.score * 100) })) }, 'Ambiguous fuzzy WhatsApp output group match; choose the exact group name');
     return null;
   };
   runtime.input.clear(); runtime.output.clear();
   runtime.groupNames = new Map();
   for (const group of Object.values(groups)) runtime.groupNames.set(group.id, group.subject || group.id);
   for (const item of configuredInputs(runtime)) {
+    // Inputs are deliberately exact-only: a fuzzy match here could make the
+    // bot read a different customer's chat. Output destinations below are
+    // allowed a guarded typo correction.
     const jid = jidForName(item);
     if (jid) runtime.input.set(jid, isJid(item) ? jid : item);
     else log.warn({ item }, 'Configured input group not found');
   }
   for (const item of configuredOutputs(runtime)) {
-    const jid = jidForName(item);
+    const jid = jidForName(item, { allowFuzzy: true });
     if (jid && runtime.input.has(jid)) {
       // Never echo an accepted play back into a customer/input group. This is
       // almost always an accidental route selection and makes delivery look

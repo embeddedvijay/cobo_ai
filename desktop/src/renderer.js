@@ -70,7 +70,7 @@ function destinationSelect(kind, current, attribute) {
   return `<select ${attribute}>${destinationOptions(kind, current)}</select>`;
 }
 function destinationInput(kind, current, attribute) {
-  const placeholder = 'Select or type group / @g.us JID';
+  const placeholder = 'Select or type WhatsApp group name';
   return `<span class="destination-combobox"><input ${attribute} list="outputGroupNames" value="${esc(current || '')}" placeholder="${placeholder}"><i>⌄</i></span>`;
 }
 function prepareGroupDialog() {

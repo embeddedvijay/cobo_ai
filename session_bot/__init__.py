@@ -120,7 +120,10 @@ class Session(Reply_processor, Scheduler):
         """Output target -> only its customers, so LD never leaks across groups."""
         routes = {}
         for contact in self.customer_contacts:
-            target = self.director_target(contact, market, "table")
+            # A formatted LD-cut table prefers All Table.  When the operator
+            # has configured only Fast Forward for this customer, use it as a
+            # safe fallback instead of silently dropping the table.
+            target = self.director_target(contact, market, "table") or self.director_target(contact, market, "fast_forward")
             if target:
                 routes.setdefault(str(target), []).append(contact)
         return routes
@@ -176,9 +179,9 @@ class Session(Reply_processor, Scheduler):
         return True
 
     def send_instant_table(self, contact: str, market: str, result_list: list) -> bool:
-        target = self.director_target(contact, market, "table")
+        target = self.director_target(contact, market, "table") or self.director_target(contact, market, "fast_forward")
         if not target:
-            print(f"No table Director target for {contact}/{market}; immediate table skipped", flush=True)
+            print(f"No Table or Fast Forward destination for {contact}/{market}; immediate LD table skipped", flush=True)
             return False
         text, total, bets = self.format_ld_table(market, result_list, self.rule_for(contact).get("LD", 100))
         if total <= 0:
@@ -188,6 +191,7 @@ class Session(Reply_processor, Scheduler):
             settlement_payload={"bets": bets, "total_play": total, "source_contact": contact},
             priority=100,
         )
+        print(f"Instant LD table queued: {contact}/{market} -> {target}; total={total}", flush=True)
         return True
 
     def notify_limit_once(self, contact: str) -> bool:

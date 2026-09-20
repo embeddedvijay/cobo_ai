@@ -100,6 +100,88 @@ def desktop_market_names(client_name: str, session_name: str, result_doc: dict) 
     return sorted(names)
 
 
+def _money_amount(value) -> int:
+    try:
+        return int(float(str(value or 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _dashboard_win(transaction: dict, result_doc: dict, rates: dict) -> int:
+    base_market, side = settlement_service._market_parts(str(transaction.get("Market", "")))
+    if not base_market:
+        return 0
+    values = settlement_service._result_values(base_market, side, result_doc)
+    if not values:
+        return 0
+    return _money_amount(sum(item.get("win", 0) for item in settlement_service._winning_rows(transaction, values, rates)))
+
+
+@app.get("/desktop/dashboard")
+def desktop_dashboard(
+    date: str = Query(...),
+    client_name: str = Query(""),
+    session_name: str = Query("_runtime"),
+    market: str = Query(""),
+):
+    """Live operations view: customer play/win, messages, market totals and table."""
+    collection = desktop_collection(date)
+    query = {"Total": {"$exists": True}}
+    if client_name:
+        query["Client"] = client_name
+    result_doc = collection.find_one({"Result": True}) or {}
+    try:
+        rates = settlement_service._rates(client_name, session_name)
+    except Exception:
+        rates = {"ank": 9.5, "jodi": 95, "single_panna": 150, "double_panna": 300, "triple_panna": 600}
+    rows = list(collection.find(query).sort([("Time", 1), ("_id", 1)]))
+    customers: dict[str, dict] = {}
+    markets: dict[str, dict] = {}
+    for row in rows:
+        contact = str(row.get("Contact", ""))
+        name = db.group_name_for_jid(client_name, session_name, contact) or contact
+        customer = customers.setdefault(contact, {"name": name, "contact": contact, "play": 0, "win": 0, "messages": 0})
+        total = _money_amount(row.get("Total"))
+        win = _dashboard_win(row, result_doc, rates)
+        customer["play"] += total; customer["win"] += win; customer["messages"] += 1
+        market_name = str(row.get("Market", "") or "UNKNOWN")
+        market_row = markets.setdefault(market_name, {"market": market_name, "play": 0, "win": 0, "messages": 0})
+        market_row["play"] += total; market_row["win"] += win; market_row["messages"] += 1
+
+    selected = market or (next(reversed(markets)) if markets else "")
+    number_table: dict[str, int] = {}
+    for row in rows:
+        if str(row.get("Market", "")) != selected:
+            continue
+        for bet in row.get("Result", []) or []:
+            if not isinstance(bet, (list, tuple)) or len(bet) < 2:
+                continue
+            amount = _money_amount(bet[-1])
+            for token in bet[:-1]:
+                token = str(token).strip()
+                if token.isdigit() and 1 <= len(token) <= 3:
+                    number_table[token] = number_table.get(token, 0) + amount
+    messages = []
+    for row in rows[-30:][::-1]:
+        contact = str(row.get("Contact", ""))
+        messages.append({
+            "id": str(row.get("_id")), "market": str(row.get("Market", "")),
+            "group": db.group_name_for_jid(client_name, session_name, contact) or contact,
+            "time": str(row.get("Time", "")), "message": str(row.get("Message", "")),
+            "total": _money_amount(row.get("Total")), "win": _dashboard_win(row, result_doc, rates),
+        })
+    return {
+        "date": date,
+        "total_play": sum(item["play"] for item in customers.values()),
+        "total_win": sum(item["win"] for item in customers.values()),
+        "customers": sorted(customers.values(), key=lambda item: item["play"], reverse=True),
+        "markets": sorted(markets.values(), key=lambda item: item["play"], reverse=True),
+        "selected_market": selected,
+        "number_table": dict(sorted(number_table.items(), key=lambda item: (len(item[0]), item[0]))),
+        "messages": messages,
+    }
+
+
 def verify(secret: str | None) -> None:
     expected = bridge_secret()
     if expected and secret != expected:

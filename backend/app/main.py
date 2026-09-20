@@ -119,6 +119,11 @@ def desktop_output_groups(client_name: str = Query(""), session_name: str = Quer
     return {"groups": db.available_output_groups(client_name, session_name)}
 
 
+@app.get("/desktop/resolve-output-group")
+def desktop_resolve_output_group(name: str = Query(""), client_name: str = Query(""), session_name: str = Query("_runtime")):
+    return db.resolve_output_group_name(client_name, session_name, name)
+
+
 @app.get("/desktop/group-mappings")
 def desktop_group_mappings(client_name: str = Query(""), session_name: str = Query("_runtime")):
     return {"mappings": db.resolved_group_mappings(client_name, session_name)}

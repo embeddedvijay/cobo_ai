@@ -180,9 +180,10 @@ async function sendOutbox(runtime, item) {
   if (item.channel !== 'whatsapp') return;
   // A normal source reply / LIMIT CHECK targets an input customer group.
   // Table and fast-forward items normally target an output group.
+  const outputRequired = Boolean(item.market || item.settlement_payload);
   const configuredInputTarget = [...runtime.input.entries()]
     .find(([, name]) => normalise(name).toLowerCase() === normalise(item.target).toLowerCase())?.[0];
-  const target = runtime.output.get(normalise(item.target)) || configuredInputTarget || (isJid(item.target) ? item.target : null);
+  const target = runtime.output.get(normalise(item.target)) || (!outputRequired ? configuredInputTarget : null) || (isJid(item.target) ? item.target : null);
   if (!target) {
     const error = new Error(`Unknown WhatsApp group target: ${item.target}`);
     error.invalidTarget = true;

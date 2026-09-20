@@ -174,6 +174,15 @@ class Reply_processor(dynamic_time_manager):
                     flag = ''
                     result_list = False
 
+                # The operator can independently silence only these three
+                # acknowledgement classes. Errors/cancel notices continue to
+                # be delivered so the sender is never left without feedback.
+                self.last_reply_type = (
+                    "total_ok" if flag == "amt" else
+                    "fast_forward_ok" if action == "✅✅" else
+                    "normal_ok" if action == "✅" else None
+                )
+
                 
                 if('CL' in market):
                     msg += "*CLOSE*"

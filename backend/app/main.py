@@ -79,6 +79,11 @@ class TransactionEditorUpdate(BaseModel):
     total: int | None = None
 
 
+class TransactionReject(BaseModel):
+    date: str
+    record_id: str
+
+
 def desktop_collection(date: str):
     """Allow only the legacy Market/YY-MM-DD daily collections."""
     if not re.fullmatch(r"\d{2}-\d{2}-\d{2}", date or ""):
@@ -126,7 +131,7 @@ def desktop_dashboard(
 ):
     """Live operations view: customer play/win, messages, market totals and table."""
     collection = desktop_collection(date)
-    query = {"Total": {"$exists": True}}
+    query = {"Total": {"$exists": True}, "Deleted": {"$ne": True}}
     if client_name:
         query["Client"] = client_name
     result_doc = collection.find_one({"Result": True}) or {}
@@ -272,7 +277,7 @@ def desktop_transactions(
 ):
     """Daily customer history; each row represents one parsed input message."""
     collection = desktop_collection(date)
-    base_query = {"Total": {"$exists": True}}
+    base_query = {"Total": {"$exists": True}, "Deleted": {"$ne": True}}
     if client_name:
         base_query["Client"] = client_name
     contacts = sorted(str(item) for item in collection.distinct("Contact", base_query) if item)
@@ -326,6 +331,35 @@ def save_desktop_transaction(payload: TransactionEditorUpdate):
     if not changed.matched_count:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return {"ok": True, "changed": bool(changed.modified_count)}
+
+
+@app.post("/desktop/transactions/reject")
+def reject_desktop_transaction(payload: TransactionReject):
+    """Remove one accepted play from all totals without allowing replay after restart."""
+    collection = desktop_collection(payload.date)
+    try:
+        record_id = ObjectId(payload.record_id)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="Invalid transaction record") from exc
+    transaction = collection.find_one({"_id": record_id, "Total": {"$exists": True}, "Deleted": {"$ne": True}})
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction was already removed")
+    now = datetime.utcnow()
+    collection.update_one(
+        {"_id": record_id},
+        {"$set": {"Deleted": True, "Settled": True, "RejectedAt": now, "RejectedBy": "desktop"}},
+    )
+    message_id = str(transaction.get("Message_ID", ""))
+    client_name = str(transaction.get("Client", ""))
+    if message_id:
+        db.raw.update_many(
+            {"client_name": client_name, "session_name": "_runtime", "message_id": message_id},
+            {"$set": {
+                "state": "cancelled", "normal_state": "cancelled", "settlement_state": "skipped",
+                "final_reply_state": "skipped", "operator_rejected_at": now,
+            }},
+        )
+    return {"ok": True, "record_id": payload.record_id}
 
 
 @app.get("/status/{client_name}/{session_name}")

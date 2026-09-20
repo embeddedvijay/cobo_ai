@@ -174,6 +174,22 @@ class Database:
         }
         return sorted(names, key=str.casefold)
 
+    def resolved_group_mappings(self, client_name: str, session_name: str) -> list[dict]:
+        """Small safe view for the desktop: real WhatsApp name/JID and route role."""
+        rows = self.group_mappings.find(
+            {"client_name": client_name, "session_name": session_name},
+            {"_id": 0, "group_name": 1, "jid": 1, "roles": 1, "resolved_at": 1},
+        )
+        return sorted(
+            ({
+                "name": str(row.get("group_name") or ""),
+                "jid": str(row.get("jid") or ""),
+                "roles": sorted(str(role) for role in (row.get("roles") or [])),
+                "resolved_at": row.get("resolved_at").isoformat() if row.get("resolved_at") else "",
+            } for row in rows),
+            key=lambda row: row["name"].casefold(),
+        )
+
     def cancel_target(self, client_name: str, session_name: str, source_jid: str, quoted_message_id: str) -> dict | None:
         """Find the original input behind a WhatsApp quoted cancel command.
 

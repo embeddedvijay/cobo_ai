@@ -5,6 +5,7 @@ let summary;
 let selectedMarketKey = '';
 let overrideTargetGroup = '';
 let selectedMarketDays = new Set();
+let loadedTransactions = [];
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -13,6 +14,8 @@ const setMessage = value => { const el = $('#saveMessage'); if (el) el.textConte
 function goto(page) {
   pages.forEach(item => item.classList.toggle('active', item.id === page));
   nav.forEach(item => item.classList.toggle('active', item.dataset.page === page));
+  if (page === 'results') loadResults();
+  if (page === 'transactions') loadTransactions();
 }
 function gotoTab(tab) {
   tabs.forEach(item => item.classList.toggle('active-tab', item.dataset.tab === tab));
@@ -25,6 +28,8 @@ function contacts() { return Object.entries(getConfig().in_contacts || {}); }
 function pretty(key) { return key.replace(/_(OP|CL)$/, '').replaceAll('_', ' '); }
 function phase(key) { return key.endsWith('_CL') ? 'Close' : 'Open'; }
 function hm(row, index) { return String(row?.[index]?.hour ?? 0).padStart(2,'0') + ':' + String(row?.[index]?.minute ?? 0).padStart(2,'0'); }
+function todayBusinessDate() { const date = new Date(); return `${String(date.getFullYear()).slice(-2)}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; }
+function validBusinessDate(value) { return /^\d{2}-\d{2}-\d{2}$/.test(value || ''); }
 function daysFor(key, row) {
   const saved = getConfig().market_days?.[key];
   return Array.isArray(saved) ? saved.map(Number) : Array.from({ length: Number(row?.[1] || 0) }, (_, index) => index);
@@ -156,6 +161,47 @@ function prepareOverrideDialog() {
   $('#overrideTable').innerHTML = '<option value="">Select table group</option>' + optionMarkup('table');
   $('#overrideForward').innerHTML = '<option value="">Select forward group</option>' + optionMarkup('fast_forward');
 }
+function resultCard(row, index) {
+  const jodi = row.open && row.close ? `${row.open} - ${row.close}` : '—';
+  const colour = ['red','violet','blue','green'][index % 4];
+  return `<article class="result-card ${colour}" data-market="${esc(row.market)}"><div class="result-card-head"><b>${esc(pretty(row.market))}</b><span>● Result</span></div><div class="result-values"><label>Open Panna<input data-result="open_panna" type="text" value="${esc(row.open_panna)}"></label><label>Jodi<div class="jodi-value">${esc(jodi)}</div></label><label>Close Panna<input data-result="close_panna" type="text" value="${esc(row.close_panna)}"></label></div><div class="result-values compact"><label>Open Ank<input data-result="open" type="text" value="${esc(row.open)}"></label><label>Open Time<input data-result="open_time" type="text" placeholder="HH:MM:SS" value="${esc(row.open_time)}"></label><label>Close Ank<input data-result="close" type="text" value="${esc(row.close)}"></label><label>Close Time<input data-result="close_time" type="text" placeholder="HH:MM:SS" value="${esc(row.close_time)}"></label></div><div class="result-card-footer"><span class="result-save-note">Edit values, then save</span><button class="secondary" data-action="save-result">Save Result</button></div></article>`;
+}
+async function loadResults() {
+  const date = $('#resultDate')?.value?.trim();
+  if (!validBusinessDate(date)) { $('#resultStatus').textContent = 'Use date format YY-MM-DD.'; return; }
+  $('#resultStatus').textContent = 'Loading results…';
+  try { const data = await window.cobo.results(date); $('#resultCards').innerHTML = data.markets.map(resultCard).join('') || '<div class="empty-data">No configured market result found for this date.</div>'; $('#resultStatus').textContent = `${data.markets.length} market result${data.markets.length === 1 ? '' : 's'} loaded for ${date}.`; }
+  catch (error) { $('#resultCards').innerHTML = ''; $('#resultStatus').textContent = error.message; }
+}
+async function saveResult(card) {
+  const payload = { date: $('#resultDate').value.trim(), market: card.dataset.market };
+  card.querySelectorAll('[data-result]').forEach(input => { payload[input.dataset.result] = input.value.trim(); });
+  const note = card.querySelector('.result-save-note'); note.textContent = 'Saving…';
+  try { await window.cobo.saveResult(payload); note.textContent = 'Saved'; } catch (error) { note.textContent = error.message; }
+}
+function transactionRow(row) {
+  return `<article class="transaction-row" data-record-id="${esc(row.id)}"><div class="transaction-meta"><b>${esc(row.market || 'Unknown market')}</b><span>${esc(row.contact)} · ${esc(row.time || '—')}</span></div><textarea data-transaction="message" rows="2">${esc(row.message)}</textarea><input data-transaction="total" type="text" inputmode="numeric" value="${esc(row.total)}"><div class="transaction-state ${row.settled ? 'settled' : ''}">${row.settled ? 'Settled' : 'Pending'}</div><button class="secondary" data-action="save-transaction">Save</button></article>`;
+}
+async function loadTransactions() {
+  const date = $('#transactionDate')?.value?.trim();
+  if (!validBusinessDate(date)) { $('#transactionStatus').textContent = 'Use date format YY-MM-DD.'; return; }
+  const contact = $('#transactionContact').value;
+  $('#transactionStatus').textContent = 'Loading customer history…';
+  try {
+    const data = await window.cobo.transactions({ date, contact }); loadedTransactions = data.transactions;
+    const select = $('#transactionContact'); const previous = select.value;
+    select.innerHTML = '<option value="">All customers</option>' + data.contacts.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+    select.value = data.contacts.includes(previous) ? previous : '';
+    $('#transactionCount').textContent = String(data.transactions.length); $('#transactionPlay').textContent = `₹${data.total_play}`; $('#transactionCustomer').textContent = select.value || 'All customers';
+    $('#transactionList').innerHTML = data.transactions.map(transactionRow).join('') || '<div class="empty-data">No customer messages found for this date.</div>';
+    $('#transactionStatus').textContent = `${data.transactions.length} message record${data.transactions.length === 1 ? '' : 's'} loaded for ${date}.`;
+  } catch (error) { $('#transactionList').innerHTML = ''; $('#transactionStatus').textContent = error.message; }
+}
+async function saveTransaction(row) {
+  const button = row.querySelector('[data-action="save-transaction"]'); button.textContent = 'Saving…';
+  try { await window.cobo.saveTransaction({ date: $('#transactionDate').value.trim(), record_id: row.dataset.recordId, message: row.querySelector('[data-transaction="message"]').value, total: Number(row.querySelector('[data-transaction="total"]').value || 0) }); button.textContent = 'Saved'; }
+  catch (error) { button.textContent = 'Save'; $('#transactionStatus').textContent = error.message; }
+}
 function log(value){const out=$('#logs');out.textContent=(out.textContent+'\n'+value).trim().slice(-12000);out.scrollTop=out.scrollHeight;}
 function setService(status){$('#botState').textContent=status.running?'Running':'Stopped';$('#botDot').classList.toggle('running',Boolean(status.running));if(status.code!==undefined)log('Service stopped with code '+status.code);}
 
@@ -182,5 +228,10 @@ async function chooseWorkspace(){try{const state=await window.cobo.chooseBotDire
 async function startService(){try{await window.cobo.startBot();log('Service started.');}catch(error){alert(error.message);}}
 $('#chooseBot').addEventListener('click',chooseWorkspace);$('#launchService').addEventListener('click',startService);$('#stopBot').addEventListener('click',()=>window.cobo.stopBot());
 $('#dashboardStart').addEventListener('click',startService);
+$('#refreshResults').addEventListener('click',loadResults);
+$('#resultCards').addEventListener('click',event=>{const button=event.target.closest('[data-action="save-result"]');if(button)saveResult(button.closest('.result-card'));});
+$('#refreshTransactions').addEventListener('click',loadTransactions);
+$('#transactionContact').addEventListener('change',loadTransactions);
+$('#transactionList').addEventListener('click',event=>{const button=event.target.closest('[data-action="save-transaction"]');if(button)saveTransaction(button.closest('.transaction-row'));});
 window.cobo.onLog(log);window.cobo.onStatus(setService);
-(async()=>{const state=await window.cobo.state();render(state.summary);setService(state);})();
+(async()=>{const date=todayBusinessDate();$('#resultDate').value=date;$('#transactionDate').value=date;const state=await window.cobo.state();render(state.summary);setService(state);})();

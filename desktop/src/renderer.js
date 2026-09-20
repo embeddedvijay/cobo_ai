@@ -368,8 +368,8 @@ async function saveTransaction(row) {
   try { await window.cobo.saveTransaction({ date: $('#transactionDate').value.trim(), record_id: row.dataset.recordId, message: row.querySelector('[data-transaction="message"]').value, total: Number(row.querySelector('[data-transaction="total"]').value || 0) }); button.textContent = 'Saved'; }
   catch (error) { button.textContent = 'Save'; $('#transactionStatus').textContent = error.message; }
 }
-function log(value){const out=$('#logs');const clean=String(value).split('\n').map(line=>line.length>420?`${line.slice(0,420)}…`:line).join('\n');out.textContent=(out.textContent+'\n'+clean).trim().slice(-9000);out.scrollTop=out.scrollHeight;}
-function setService(status){const state=status.running?'Running':status.starting?'Starting…':'Stopped';$('#botState').textContent=state;$('#botDot').classList.toggle('running',Boolean(status.running));if(status.running&&$('#dashboard')?.classList.contains('active'))setTimeout(loadDashboard,600);if(status.code!==undefined)log('Service stopped with code '+status.code);}
+function log(value){const clean=String(value).split('\n').map(line=>line.length>420?`${line.slice(0,420)}…`:line).join('\n');['#logs','#configLogs'].forEach(id=>{const out=$(id);if(!out)return;out.textContent=(out.textContent+'\n'+clean).trim().slice(-12000);out.scrollTop=out.scrollHeight;});}
+function setService(status){const state=status.running?'Running':status.starting?'Starting…':'Stopped';$('#botState').textContent=state;$('#botDot').classList.toggle('running',Boolean(status.running));const workspaceState=$('#workspaceLogState');if(workspaceState)workspaceState.textContent=state;if(status.running&&$('#dashboard')?.classList.contains('active'))setTimeout(loadDashboard,600);if(status.running)log('Service running — waiting for input/output activity.');if(status.code!==undefined)log('Service stopped with code '+status.code);}
 
 nav.forEach(button=>button.addEventListener('click',()=>goto(button.dataset.page)));
 document.querySelectorAll('[data-open-config]').forEach(button=>button.addEventListener('click',()=>showConfigDetail(button.dataset.openTab || 'timings')));

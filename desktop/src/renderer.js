@@ -83,8 +83,18 @@ async function loadOutputGroups() {
     availableOutputGroups = [...new Set(data.groups || [])];
     const list = $('#outputGroupNames');
     if (list) list.innerHTML = availableOutputGroups.map(name => `<option value="${esc(name)}"></option>`).join('');
+    loadGroupMappings();
     renderGroups();
   } catch (_) { availableOutputGroups = []; const list = $('#outputGroupNames'); if (list) list.innerHTML = ''; renderGroups(); }
+}
+async function loadGroupMappings() {
+  const root = $('#groupMappings');
+  if (!root || !window.cobo.groupMappings) return;
+  try {
+    const data = await window.cobo.groupMappings();
+    const rows = data.mappings || [];
+    root.innerHTML = rows.length ? rows.map(row => `<div class="group-mapping"><b>${esc(row.name)}</b><span>${esc(row.jid)}</span><i>${esc((row.roles || []).join(' · ') || 'available')}</i></div>`).join('') : 'No resolved mapping yet. Start Service and wait a few seconds.';
+  } catch (error) { root.textContent = `Mapping read failed: ${error.message}`; }
 }
 
 const money = value => `₹${Number(value || 0).toLocaleString('en-IN')}`;

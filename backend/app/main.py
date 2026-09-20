@@ -128,6 +128,7 @@ def desktop_dashboard(
     client_name: str = Query(""),
     session_name: str = Query("_runtime"),
     market: str = Query(""),
+    contact: str = Query(""),
 ):
     """Live operations view: customer play/win, messages, market totals and table."""
     collection = desktop_collection(date)
@@ -139,25 +140,47 @@ def desktop_dashboard(
         rates = settlement_service._rates(client_name, session_name)
     except Exception:
         rates = {"ank": 9.5, "jodi": 95, "single_panna": 150, "double_panna": 300, "triple_panna": 600}
-    rows = list(collection.find(query).sort([("Time", 1), ("_id", 1)]))
+    all_rows = list(collection.find(query).sort([("Time", 1), ("_id", 1)]))
     customers: dict[str, dict] = {}
-    markets: dict[str, dict] = {}
-    for row in rows:
-        contact = str(row.get("Contact", ""))
-        name = db.group_name_for_jid(client_name, session_name, contact) or contact
-        customer = customers.setdefault(contact, {"name": name, "contact": contact, "play": 0, "win": 0, "messages": 0})
+    for row in all_rows:
+        row_contact = str(row.get("Contact", ""))
+        name = db.group_name_for_jid(client_name, session_name, row_contact) or row_contact
+        customer = customers.setdefault(row_contact, {"name": name, "contact": row_contact, "play": 0, "win": 0, "messages": 0})
         total = _money_amount(row.get("Total"))
         win = _dashboard_win(row, result_doc, rates)
         customer["play"] += total; customer["win"] += win; customer["messages"] += 1
+
+    selected_contact = contact
+    rows = [row for row in all_rows if not selected_contact or str(row.get("Contact", "")) == selected_contact]
+    markets: dict[str, dict] = {}
+    for row in rows:
         market_name = str(row.get("Market", "") or "UNKNOWN")
+        total = _money_amount(row.get("Total"))
+        win = _dashboard_win(row, result_doc, rates)
         market_row = markets.setdefault(market_name, {"market": market_name, "play": 0, "win": 0, "messages": 0})
         market_row["play"] += total; market_row["win"] += win; market_row["messages"] += 1
 
     selected = market or (next(reversed(markets)) if markets else "")
     number_table: dict[str, int] = {}
+    breakdown = {
+        "OP": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}},
+        "CL": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}},
+    }
     for row in rows:
         if str(row.get("Market", "")) != selected:
             continue
+        _base, side = settlement_service._market_parts(selected)
+        if side not in breakdown:
+            continue
+        total = _money_amount(row.get("Total"))
+        breakdown[side]["play"] += total
+        values = settlement_service._result_values(_base, side, result_doc) if _base else None
+        wins = settlement_service._winning_rows(row, values, rates) if values else []
+        breakdown[side]["win"] += _money_amount(sum(item.get("win", 0) for item in wins))
+        for winner in wins:
+            kind = "panna" if "panna" in winner["kind"] else winner["kind"]
+            if kind in breakdown[side]:
+                breakdown[side][kind]["win"] += _money_amount(winner.get("win", 0))
         for bet in row.get("Result", []) or []:
             if not isinstance(bet, (list, tuple)) or len(bet) < 2:
                 continue
@@ -166,12 +189,14 @@ def desktop_dashboard(
                 token = str(token).strip()
                 if token.isdigit() and 1 <= len(token) <= 3:
                     number_table[token] = number_table.get(token, 0) + amount
+                    kind = "ank" if len(token) == 1 else "jodi" if len(token) == 2 else "panna"
+                    breakdown[side][kind]["play"] += amount
     messages = []
     for row in rows[-30:][::-1]:
-        contact = str(row.get("Contact", ""))
+        row_contact = str(row.get("Contact", ""))
         messages.append({
             "id": str(row.get("_id")), "market": str(row.get("Market", "")),
-            "group": db.group_name_for_jid(client_name, session_name, contact) or contact,
+            "group": db.group_name_for_jid(client_name, session_name, row_contact) or row_contact,
             "time": str(row.get("Time", "")), "message": str(row.get("Message", "")),
             "total": _money_amount(row.get("Total")), "win": _dashboard_win(row, result_doc, rates),
         })
@@ -180,9 +205,11 @@ def desktop_dashboard(
         "total_play": sum(item["play"] for item in customers.values()),
         "total_win": sum(item["win"] for item in customers.values()),
         "customers": sorted(customers.values(), key=lambda item: item["play"], reverse=True),
+        "selected_contact": selected_contact,
         "markets": sorted(markets.values(), key=lambda item: item["play"], reverse=True),
         "selected_market": selected,
         "number_table": dict(sorted(number_table.items(), key=lambda item: (len(item[0]), item[0]))),
+        "breakdown": breakdown,
         "messages": messages,
     }
 

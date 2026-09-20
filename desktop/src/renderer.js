@@ -6,6 +6,7 @@ let selectedMarketKey = '';
 let overrideTargetGroup = '';
 let selectedMarketDays = new Set();
 let loadedTransactions = [];
+let loadedTransactionDetails = {};
 let dashboardMarket = '';
 let dashboardContact = '';
 let dashboardLoading = false;
@@ -269,10 +270,6 @@ async function saveResult(card) {
   try { await window.cobo.saveResult(payload); note.textContent = 'Saved'; } catch (error) { note.textContent = error.message; }
 }
 function transactionState(row) { return row.settled ? 'settled' : row.result_ready ? 'ready' : 'pending'; }
-function transactionRow(row) {
-  const state = transactionState(row); const label = state === 'settled' ? 'Settled' : state === 'ready' ? 'Result Ready' : 'Pending';
-  return `<article class="transaction-row" data-record-id="${esc(row.id)}"><div class="transaction-meta"><b>${esc(row.market || 'Unknown market')}</b><strong>${esc(row.contact_name || row.contact || 'Unknown group')}</strong><span>${esc(row.time || '—')} · Play ${money(row.total)} · Win ${money(row.win)}</span></div><textarea data-transaction="message" rows="5" aria-label="Message">${esc(row.message)}</textarea><input data-transaction="total" type="text" inputmode="numeric" value="${esc(row.total)}"><div class="transaction-state ${state}">${label}</div><button class="secondary" data-action="save-transaction">Save</button></article>`;
-}
 function transactionBase(market) { return String(market || '').replace(/_(OP|CL)$/, ''); }
 function transactionMarketCards(rows) {
   const markets = {};
@@ -302,7 +299,10 @@ function oldCustomerCard(item, index) {
   const percent = item.play ? Math.min(100, Math.max(10, (item.win / item.play) * 45 + 25)) : 0;
   return `<button class="old-customer-card shade-${index % 4}" data-transaction-contact="${esc(item.contact)}"><span class="customer-initial">${esc(item.name.charAt(0).toUpperCase())}</span><div><b>${esc(item.name)}</b><small>${item.messages} records</small></div><i style="width:${percent}%"></i><footer><span>PLAY<strong>${money(item.play)}</strong></span><span>WIN<strong>${money(item.win)}</strong></span></footer></button>`;
 }
-function resizeTransactionMessages() { document.querySelectorAll('[data-transaction="message"]').forEach(area => { area.style.height = 'auto'; area.style.height = `${Math.min(Math.max(area.scrollHeight, 98), 190)}px`; }); }
+function transactionMarketDetail(market, detail) {
+  if (!detail) return '<div class="empty-data">No number-wise data for this market.</div>';
+  return `<article class="transaction-detail"><div class="panel-title"><div><p class="eyebrow">${esc(pretty(market))}</p><h3>Play &amp; Win detail</h3></div></div>${marketBreakdown('OPEN', detail.breakdown?.OP)}${marketBreakdown('CLOSE', detail.breakdown?.CL)}<div class="number-table-title">Number-wise Play</div><div class="transaction-number-table">${renderDashboardNumbers(detail.number_table)}</div></article>`;
+}
 function renderTransactions() {
   const market = $('#transactionMarket')?.value || '';
   const state = $('#transactionState')?.value || '';
@@ -324,7 +324,7 @@ function renderTransactions() {
   $('#transactionPlay').textContent = `₹${rows.reduce((total, row) => total + Number(row.total || 0), 0)}`;
   $('#transactionWin').textContent = money(rows.reduce((total, row) => total + Number(row.win || 0), 0));
   $('#transactionMarketSummary').innerHTML = markets.map(oldMarketCard).join('') || '<div class="empty-data">No market record matches these filters.</div>';
-  $('#transactionList').innerHTML = market ? (rows.map(transactionRow).join('') || '<div class="empty-data">No old record for this market.</div>') : ''; resizeTransactionMessages();
+  $('#transactionList').innerHTML = market ? transactionMarketDetail(market, loadedTransactionDetails[market]) : '';
 }
 async function loadTransactions() {
   const date = $('#transactionDate')?.value?.trim();
@@ -332,7 +332,7 @@ async function loadTransactions() {
   const contact = $('#transactionContact').value;
   $('#transactionStatus').textContent = 'Loading customer history…';
   try {
-    const data = await window.cobo.transactions({ date, contact }); loadedTransactions = data.transactions;
+    const data = await window.cobo.transactions({ date, contact }); loadedTransactions = data.transactions; loadedTransactionDetails = data.market_details || {};
     const select = $('#transactionContact'); const previous = select.value;
     select.innerHTML = '<option value="">All customers</option>' + data.contacts.map(item => `<option value="${esc(item.value)}">${esc(item.name)}</option>`).join('');
     select.value = data.contacts.some(item => item.value === previous) ? previous : '';

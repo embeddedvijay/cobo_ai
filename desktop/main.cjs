@@ -251,11 +251,13 @@ ipcMain.handle('bot:choose-directory', async () => {
 ipcMain.handle('bot:start', () => {
   const state = ensureWorkspaceConfig();
   if (botProcess) return { running: true };
-  if (!isProjectWorkspace(state.botDirectory)) throw new Error(projectFolderHelp);
+  const projectDirectory = isProjectWorkspace(state.botDirectory) ? state.botDirectory : sourceProjectDirectory();
+  if (!projectDirectory) throw new Error(projectFolderHelp);
+  if (projectDirectory !== state.botDirectory) saveState({ ...state, botDirectory: projectDirectory });
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const runtimeConfigPath = writeRuntimeConfig(state.configPath, state.botDirectory);
+  const runtimeConfigPath = writeRuntimeConfig(state.configPath, projectDirectory);
   botProcess = spawn(npm, ['start'], {
-    cwd: state.botDirectory,
+    cwd: projectDirectory,
     env: { ...process.env, COBO_CONFIG_PATH: state.configPath, COBO_RUNTIME_CONFIG_PATH: runtimeConfigPath, COBO_CONFIG_FORMAT: 'json' },
     windowsHide: true
   });

@@ -3,6 +3,7 @@ const nav = [...document.querySelectorAll('.nav')];
 const tabs = [...document.querySelectorAll('.control-tab')];
 let summary;
 let selectedMarketKey = '';
+let selectedMarketFilter = '';
 let overrideTargetGroup = '';
 let selectedMarketDays = new Set();
 let loadedTransactions = [];
@@ -69,12 +70,12 @@ function destinationSelect(kind, current, attribute) {
   return `<select ${attribute}>${destinationOptions(kind, current)}</select>`;
 }
 function destinationInput(kind, current, attribute) {
-  const placeholder = kind === 'table' ? 'Select group or paste @g.us JID' : 'Select group or paste @g.us JID';
-  return `<input ${attribute} list="outputGroupNames" value="${esc(current || '')}" placeholder="${placeholder}">`;
+  const placeholder = 'Select or type group / @g.us JID';
+  return `<span class="destination-combobox"><input ${attribute} list="outputGroupNames" value="${esc(current || '')}" placeholder="${placeholder}"><i>⌄</i></span>`;
 }
 function prepareGroupDialog() {
-  $('#groupAllTable').innerHTML = destinationOptions('table');
-  $('#groupAllForward').innerHTML = destinationOptions('fast_forward');
+  $('#groupAllTable').value = '';
+  $('#groupAllForward').value = '';
 }
 async function loadOutputGroups() {
   if (!window.cobo.outputGroups) return;
@@ -208,8 +209,12 @@ function renderTimingTable() {
   const root = $('#marketRows'); const editor = $('#marketEditor');
   if (!root || !editor) return;
   const data = timingRows();
-  if (!selectedMarketKey || !data.some(([key]) => key === selectedMarketKey)) selectedMarketKey = data[0]?.[0] || '';
-  root.innerHTML = data.map(([key,row]) => `<button class="timing-line ${key === selectedMarketKey ? 'selected' : ''}" data-market-key="${esc(key)}">
+  const filter = $('#marketSearch');
+  const markets = [...new Set(data.map(([key]) => key.replace(/_(OP|CL)$/, '')))];
+  if (filter) filter.innerHTML = '<option value="">All markets</option>' + markets.map(key => `<option value="${esc(key)}" ${key === selectedMarketFilter ? 'selected' : ''}>${esc(pretty(key))}</option>`).join('');
+  const visible = selectedMarketFilter ? data.filter(([key]) => key.replace(/_(OP|CL)$/, '') === selectedMarketFilter) : data;
+  if (!selectedMarketKey || !visible.some(([key]) => key === selectedMarketKey)) selectedMarketKey = visible[0]?.[0] || '';
+  root.innerHTML = visible.map(([key,row]) => `<button class="timing-line ${key === selectedMarketKey ? 'selected' : ''}" data-market-key="${esc(key)}">
     <span>${esc(pretty(key))}</span><span class="phase-chip ${key.endsWith('_CL') ? 'close' : ''}">${phase(key)}</span>
     <span class="time-chip">${hm(row,0)}</span><span class="time-chip">${hm(row,2)}</span>
     <span class="day-dots">${esc(row?.[1] ?? 0)} days</span><span class="status-ok">● Active</span><span class="row-actions">▣ &nbsp;⌫</span>
@@ -303,9 +308,8 @@ function prepareOverrideDialog() {
   const markets = Object.keys(getConfig().fixed_market_time || {}).map(pretty)
     .filter((value, index, all) => all.indexOf(value) === index).sort();
   $('#overrideMarket').innerHTML = '<option value="" selected>Select market</option>' + markets.map(value => `<option value="${esc(value.replaceAll(' ', '_'))}">${esc(value)}</option>`).join('');
-  const optionMarkup = kind => destinationNames(kind).map(value => `<option value="${esc(value)}">${esc(value)}</option>`).join('');
-  $('#overrideTable').innerHTML = '<option value="">Select table group</option>' + optionMarkup('table');
-  $('#overrideForward').innerHTML = '<option value="">Select forward group</option>' + optionMarkup('fast_forward');
+  $('#overrideTable').value = '';
+  $('#overrideForward').value = '';
 }
 function resultCard(row, index) {
   const jodi = row.open && row.close ? `${row.open} - ${row.close}` : '—';
@@ -415,6 +419,7 @@ document.querySelectorAll('[data-goto]').forEach(button=>button.addEventListener
 tabs.forEach(button=>button.addEventListener('click',()=>gotoTab(button.dataset.tab)));
 document.querySelectorAll('[data-tab-target]').forEach(button=>button.addEventListener('click',()=>gotoTab(button.dataset.tabTarget)));
 $('#marketRows').addEventListener('click',event=>{const item=event.target.closest('[data-market-key]');if(item){selectedMarketKey=item.dataset.marketKey;renderTimingTable();}});
+$('#marketSearch').addEventListener('change',event=>{selectedMarketFilter=event.target.value;selectedMarketKey='';renderTimingTable();});
 $('#marketEditor').addEventListener('click',event=>{
   const phaseButton=event.target.closest('[data-phase]');
   if(phaseButton){const key=selectedMarketKey.replace(/_(OP|CL)$/, `_${phaseButton.dataset.phase}`);if(getConfig().fixed_market_time?.[key]){selectedMarketKey=key;renderTimingTable();}return;}

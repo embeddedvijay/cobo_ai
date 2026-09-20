@@ -110,7 +110,7 @@ async function resolveGroups(runtime) {
   // current JID on every connection.
   for (const group of Object.values(groups)) addMapping(group.subject, group.id, 'available');
   for (const [jid, name] of runtime.input) addMapping(name, jid, 'input');
-  for (const [name, jid] of runtime.output) addMapping(name, jid, 'output');
+  for (const [name, jid] of runtime.output) addMapping(runtime.groupNames.get(jid) || name, jid, 'output');
   await http.post('/groups/sync', {
     client_name: runtime.client.client_name,
     session_name: runtime.session.session_name,

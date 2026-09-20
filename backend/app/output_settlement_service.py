@@ -95,6 +95,31 @@ class OutputSettlementService:
         return matches
 
     @staticmethod
+    def _played_stakes(transaction: dict) -> list[tuple[str, int]]:
+        """Classify every accepted input row by its played category, not win."""
+        played = []
+        for row in transaction.get("Result", []) or []:
+            if not isinstance(row, (list, tuple)) or len(row) < 2:
+                continue
+            stake = _amount(row[-1])
+            if stake <= 0:
+                continue
+            numbers = [str(value).strip() for value in row[:-1] if str(value).strip().isdigit()]
+            if not numbers:
+                continue
+            number = numbers[0]
+            if len(number) == 1:
+                kind = "ank"
+            elif len(number) == 2:
+                kind = "jodi"
+            elif len(number) == 3:
+                kind = _panna_type(number)
+            else:
+                continue
+            played.append((kind, stake))
+        return played
+
+    @staticmethod
     def _reply(market: str, values: dict, matches: dict[str, list[tuple[str, int]]], total_play: int, icons: dict) -> tuple[str, dict]:
         title = f"*{market}*\n*RESULT: {values['display']}*"
         if not any(matches.values()):
@@ -170,12 +195,9 @@ class OutputSettlementService:
     def _queue_input_group_totals(self, client_name: str, session_name: str, trigger_message_id: str, icons: dict, limit: int, business_date: str) -> dict:
         """Queue one end-total per input group, based only on that group's plays.
 
-        A raw play is marked queued only when its local Result exists and the
-        group total has entered the durable outbox. Missing results stay
-        pending for the next `last`; they are never counted as no-win.
+        This is a play/stake statement, so it deliberately does not depend on
+        a market result or any payout calculation.
         """
-        rates = settlement_service._rates(client_name, session_name)
-        result_cache: dict[str, dict] = {}
         groups: dict[tuple[str, str], dict] = {}
         counts = {"input_group_totals_queued": 0, "input_waiting_result": 0, "input_skipped": 0}
 
@@ -185,31 +207,25 @@ class OutputSettlementService:
                 db.skip_settlement(raw["_id"], "legacy_transaction_not_found")
                 counts["input_skipped"] += 1
                 continue
-            base_market, side = self._market_parts(str(transaction.get("Market", "")))
+            base_market, _side = self._market_parts(str(transaction.get("Market", "")))
             if not base_market:
                 db.skip_settlement(raw["_id"], "unsupported_market")
                 counts["input_skipped"] += 1
                 continue
             business_date = str(raw["business_date"])
-            result_doc = result_cache.setdefault(business_date, db.result_document(business_date))
-            values = settlement_service._result_values(base_market, side, result_doc)
-            if not values:
-                counts["input_waiting_result"] += 1
-                continue
-
             key = (str(raw["source_jid"]), business_date)
             group = groups.setdefault(key, {
                 "raws": [],
                 "totals": {name: 0 for name in ("ank", "sp", "dp", "tp", "jodi")},
+                "message_totals": [],
                 "total_play": 0,
             })
             group["raws"].append(raw)
             message_total = _amount(transaction.get("Total"))
-            group.setdefault("message_totals", []).append(message_total)
+            group["message_totals"].append(message_total)
             group["total_play"] += message_total
-            for win in settlement_service._winning_rows(transaction, values, rates):
-                category = win["kind"].replace("single_panna", "sp").replace("double_panna", "dp").replace("triple_panna", "tp")
-                group["totals"][category] += _amount(win["win"])
+            for category, stake in self._played_stakes(transaction):
+                group["totals"][category] += stake
 
         for (source_jid, business_date), group in groups.items():
             reserved = []

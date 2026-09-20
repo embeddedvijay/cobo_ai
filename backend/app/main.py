@@ -84,6 +84,29 @@ class TransactionReject(BaseModel):
     record_id: str
 
 
+class ManualFinalRequest(BaseModel):
+    client_name: str
+    session_name: str = "_runtime"
+    output_group: str
+
+
+def configured_output_groups(client_name: str, session_name: str) -> list[str]:
+    try:
+        contacts = find_session(client_name, session_name)["session"].get("out_contacts", {})
+    except KeyError:
+        return []
+    groups = set()
+    for route in contacts.values():
+        if not isinstance(route, dict):
+            continue
+        for value in route.values():
+            if isinstance(value, str) and value.strip():
+                groups.add(value.strip())
+            elif isinstance(value, list):
+                groups.update(str(item).strip() for item in value if str(item).strip())
+    return sorted(groups)
+
+
 def desktop_collection(date: str):
     """Allow only the legacy Market/YY-MM-DD daily collections."""
     if not re.fullmatch(r"\d{2}-\d{2}-\d{2}", date or ""):
@@ -197,6 +220,28 @@ def desktop_dashboard(
         "OP": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}, "winning_numbers": {"ank": {}, "panna": {}, "jodi": {}}},
         "CL": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}, "winning_numbers": {"ank": {}, "panna": {}, "jodi": {}}},
     }
+
+
+@app.get("/desktop/final-options")
+def desktop_final_options(client_name: str = Query(""), session_name: str = Query("_runtime")):
+    return {"output_groups": configured_output_groups(client_name, session_name)}
+
+
+@app.post("/desktop/run-final")
+def desktop_run_final(payload: ManualFinalRequest):
+    """Manual equivalent of the output-group `last` trigger from Dashboard."""
+    output_name = payload.output_group.strip()
+    if output_name not in configured_output_groups(payload.client_name, payload.session_name):
+        raise HTTPException(status_code=422, detail="Select a configured output group")
+    output_jid = output_name if output_name.endswith("@g.us") else db.group_jid_for_name(
+        payload.client_name, payload.session_name, output_name
+    )
+    if not output_jid:
+        raise HTTPException(status_code=409, detail="Output group is not resolved yet. Start the service once, then retry.")
+    trigger_id = f"desktop-final:{db.date}:{output_jid}"
+    return api_response(output_settlement_service.queue_group(
+        payload.client_name, payload.session_name, output_jid, trigger_id
+    ))
     for row in rows:
         row_market = str(row.get("Market", ""))
         base_market, side = settlement_service._market_parts(row_market)

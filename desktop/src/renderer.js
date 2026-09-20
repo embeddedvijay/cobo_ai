@@ -162,7 +162,7 @@ function render(next) {
     ['Input Groups', summary?.contactCount || 0, 'Configured customer groups'],
     ['Market Timings', summary?.marketCount || 0, 'Open and close rules'],
     ['Service Status', $('#botState')?.textContent || 'Stopped', 'Local service'],
-    ['Today Play', '—', 'Available while service runs']
+    ['Today Play', '₹0', 'No live play yet']
   ].map((x,i) => `<div class="metric metric-${i}"><small>${x[0]}</small><strong>${esc(x[1])}</strong><span>${x[2]}</span></div>`).join('');
   $('#configOverviewGroups').innerHTML = contacts().map(([name, item]) => `<div class="crm-customer-row"><b>${esc(name)}</b><span>${esc(item.LD ?? 100)}%</span><span>₹${esc(item.Limit ?? 0)}</span><span>${item.instant_cutting ? 'Instant' : 'Scheduled'}</span></div>`).join('') || '<p class="muted">No input group configured.</p>';
   $('#configOverviewMarkets').innerHTML = timingRows().slice(0,8).map(([name, row]) => `<div class="crm-market-row"><div><b>${esc(pretty(name))}</b><small>${phase(name)} · ${hm(row, 0)} – ${hm(row, 2)}</small></div><span>● Active</span></div>`).join('');

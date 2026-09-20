@@ -485,5 +485,13 @@ class Database:
                     for raw_id in raw_ids:
                         self.mark_legacy_transaction_settled(raw_id)
 
+    def mark_outbox_invalid_target(self, message_id: str, error: str) -> None:
+        """A config target missing from WhatsApp cannot succeed on retry."""
+        from bson import ObjectId
+        self.outbox.update_one(
+            {"_id": ObjectId(message_id), "state": "sending"},
+            {"$set": {"state": "failed", "last_error": error, "updated_at": datetime.utcnow(), "failed_reason": "unknown_output_group"}},
+        )
+
 
 db = Database()

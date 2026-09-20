@@ -105,14 +105,15 @@ class Session(Reply_processor, Scheduler):
     def director_target(self, contact: str, market: str, kind: str) -> str | None:
         """Market override wins; otherwise use this customer's all-market route.
 
-        New desktop JSON:
-          Director: {all_table, all_fast_forward, market_overrides: {...}}
-        Old per-market Director JSON remains valid for existing users.
+        Desktop workspace owns customer routing. Reference JSON supplies only
+        market defaults/timings, never customer destinations. Therefore only
+        the explicit desktop `market_overrides` map is considered here; old
+        top-level per-market Director entries such as ALL_MARKET are ignored.
         """
         director = self.rule_for(contact).get("Director", {})
         base = self._base_market(market)
         overrides = director.get("market_overrides", {})
-        row = overrides.get(base, director.get(base, {})) or {}
+        row = overrides.get(base, {}) or {}
         default_key = "all_table" if kind == "table" else "all_fast_forward"
         return row.get(kind) or director.get(default_key)
 

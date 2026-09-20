@@ -324,6 +324,7 @@ def desktop_transactions(
 ):
     """Daily customer history; each row represents one parsed input message."""
     collection = desktop_collection(date)
+    result_doc = collection.find_one({"Result": True}) or {}
     base_query = {"Total": {"$exists": True}, "Deleted": {"$ne": True}}
     if client_name:
         base_query["Client"] = client_name
@@ -339,6 +340,8 @@ def desktop_transactions(
         query["Contact"] = contact
     rows = []
     for row in collection.find(query).sort([("Time", 1), ("_id", 1)]):
+        base_market, side = settlement_service._market_parts(str(row.get("Market", "")))
+        result_ready = bool(base_market and settlement_service._result_values(base_market, side, result_doc))
         rows.append({
             "id": str(row["_id"]),
             "client": str(row.get("Client", "")),
@@ -350,6 +353,7 @@ def desktop_transactions(
             "total": int(row.get("Total", 0) or 0),
             "action": str(row.get("Action", "")),
             "settled": bool(row.get("Settled", False)),
+            "result_ready": result_ready,
         })
     return {
         "date": date,

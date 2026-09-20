@@ -167,6 +167,19 @@ function isProjectWorkspace(directory) {
 
 const projectFolderHelp = 'Choose the project folder that contains start.sh. Do not choose its desktop subfolder.';
 
+const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+async function waitForLocalService(timeoutMs = 35_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${desktopBackendUrl()}/health`);
+      if (response.ok) return true;
+    } catch (_error) { /* backend is still booting */ }
+    await wait(500);
+  }
+  return false;
+}
+
 async function desktopApi(path, options = {}) {
   let response;
   try {
@@ -249,7 +262,7 @@ ipcMain.handle('bot:choose-directory', async () => {
   saveState(next);
   return next;
 });
-ipcMain.handle('bot:start', () => {
+ipcMain.handle('bot:start', async () => {
   const state = ensureWorkspaceConfig();
   if (botProcess) return { running: true };
   const projectDirectory = isProjectWorkspace(state.botDirectory) ? state.botDirectory : sourceProjectDirectory();
@@ -265,6 +278,10 @@ ipcMain.handle('bot:start', () => {
   botProcess.stdout.on('data', data => emit('bot-log', data.toString()));
   botProcess.stderr.on('data', data => emit('bot-log', data.toString()));
   botProcess.on('close', code => { botProcess = undefined; emit('bot-status', { running: false, code }); });
+  emit('bot-status', { running: false, starting: true });
+  if (!await waitForLocalService()) {
+    throw new Error('Service did not become ready. Check the activity log for the startup error.');
+  }
   emit('bot-status', { running: true });
   return { running: true };
 });

@@ -63,11 +63,11 @@ function liveMessageCard(row) {
 }
 function liveMarketCard(row, index) {
   const colour = ['red','violet','blue','green'][index % 4];
-  return `<button class="live-market ${colour} ${row.market === dashboardMarket ? 'selected' : ''}" data-dashboard-market="${esc(row.market)}"><b>${esc(pretty(row.market))}</b><div><span>PLAY <strong>${money(row.play)}</strong></span><span>WIN <strong>${money(row.win)}</strong></span></div><small>${row.messages} messages</small></button>`;
+  return `<button class="live-market ${colour} ${row.market === dashboardMarket ? 'selected' : ''}" data-dashboard-market="${esc(row.market)}"><b>${esc(pretty(row.market))}</b><div class="market-side-grid"><span>OPEN PLAY <strong>${money(row.open_play)}</strong></span><span>OPEN WIN <strong>${money(row.open_win)}</strong></span><span>CLOSE PLAY <strong>${money(row.close_play)}</strong></span><span>CLOSE WIN <strong>${money(row.close_win)}</strong></span></div><small>${row.messages} messages · total ${money(row.play)}</small></button>`;
 }
 function marketBreakdown(label, detail) {
   const info = detail || {};
-  const line = (name, value) => `<span>${name}<b>${money(value?.play)} / ${money(value?.win)}</b></span>`;
+  const line = (name, value) => `<span><em>${name}</em><b>Play ${money(value?.play)}</b><strong>Win ${money(value?.win)}</strong></span>`;
   return `<article class="market-breakdown"><header><b>${label}</b><span>PLAY<strong>${money(info.play)}</strong></span><span>WIN<strong>${money(info.win)}</strong></span></header><div>${line('ANK', info.ank)}${line('PANNA', info.panna)}${line('JODI', info.jodi)}</div></article>`;
 }
 function renderDashboardNumbers(values) {

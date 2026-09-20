@@ -56,18 +56,22 @@ function loadConfig(filePath) {
 }
 
 function existingAuthDir(projectDirectory, configuredAuthDir = '') {
+  const hasLoggedInSession = directory => {
+    try { return JSON.parse(fs.readFileSync(path.join(directory, 'creds.json'), 'utf8')).registered === true; }
+    catch { return false; }
+  };
   const configured = String(configuredAuthDir || '').trim();
   const absoluteConfigured = configured
     ? (path.isAbsolute(configured) ? configured : path.join(projectDirectory, configured))
     : '';
-  if (absoluteConfigured && fs.existsSync(path.join(absoluteConfigured, 'creds.json'))) return configured;
+  if (absoluteConfigured && hasLoggedInSession(absoluteConfigured)) return configured;
 
   const authRoot = path.join(projectDirectory, 'auth_info');
   const candidates = [];
-  if (fs.existsSync(path.join(authRoot, 'creds.json'))) candidates.push('./auth_info');
+  if (hasLoggedInSession(authRoot)) candidates.push('./auth_info');
   if (fs.existsSync(authRoot)) {
     for (const entry of fs.readdirSync(authRoot, { withFileTypes: true })) {
-      if (entry.isDirectory() && fs.existsSync(path.join(authRoot, entry.name, 'creds.json'))) {
+      if (entry.isDirectory() && hasLoggedInSession(path.join(authRoot, entry.name))) {
         candidates.push(`./auth_info/${entry.name}`);
       }
     }

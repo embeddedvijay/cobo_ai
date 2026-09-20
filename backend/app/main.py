@@ -112,11 +112,32 @@ def _money_amount(value) -> int:
         return 0
 
 
+def _dashboard_result_values(base_market: str, side: str, result_doc: dict) -> dict | None:
+    """Dashboard may show OP/CL win as soon as that side's result arrives.
+
+    Final WhatsApp settlement deliberately still waits for the full result.
+    """
+    result = result_doc.get(base_market) or {}
+    open_ank = str(result.get("OPEN", "")).strip()
+    open_panna = str(result.get("OPANAL", result.get("OP_PANAL", ""))).strip()
+    close_ank = str(result.get("CLOSE", "")).strip()
+    close_panna = str(result.get("CPANAL", result.get("CL_PANAL", ""))).strip()
+    if side == "OP":
+        if not open_ank or not open_panna:
+            return None
+        return {"ank": open_ank, "panna": open_panna, "jodi": f"{open_ank}{close_ank}" if close_ank else ""}
+    if side == "CL":
+        if not close_ank or not close_panna:
+            return None
+        return {"ank": close_ank, "panna": close_panna, "jodi": f"{open_ank}{close_ank}" if open_ank else ""}
+    return None
+
+
 def _dashboard_win(transaction: dict, result_doc: dict, rates: dict) -> int:
     base_market, side = settlement_service._market_parts(str(transaction.get("Market", "")))
     if not base_market:
         return 0
-    values = settlement_service._result_values(base_market, side, result_doc)
+    values = _dashboard_result_values(base_market, side, result_doc)
     if not values:
         return 0
     return _money_amount(sum(item.get("win", 0) for item in settlement_service._winning_rows(transaction, values, rates)))
@@ -185,7 +206,7 @@ def desktop_dashboard(
             continue
         total = _money_amount(row.get("Total"))
         breakdown[side]["play"] += total
-        values = settlement_service._result_values(base_market, side, result_doc) if base_market else None
+        values = _dashboard_result_values(base_market, side, result_doc) if base_market else None
         wins = settlement_service._winning_rows(row, values, rates) if values else []
         breakdown[side]["win"] += _money_amount(sum(item.get("win", 0) for item in wins))
         for winner in wins:

@@ -166,6 +166,49 @@ def _dashboard_win(transaction: dict, result_doc: dict, rates: dict) -> int:
     return _money_amount(sum(item.get("win", 0) for item in settlement_service._winning_rows(transaction, values, rates)))
 
 
+def _market_play_breakdown(rows: list[dict], market: str, result_doc: dict, rates: dict) -> dict:
+    """Aggregate one customer's market into the desktop Ank/Panna/Jodi view."""
+    number_table: dict[str, int] = {}
+    breakdown = {
+        "OP": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}, "winning_numbers": {"ank": {}, "panna": {}, "jodi": {}}},
+        "CL": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}, "winning_numbers": {"ank": {}, "panna": {}, "jodi": {}}},
+    }
+    for row in rows:
+        base_market, side = settlement_service._market_parts(str(row.get("Market", "")))
+        if base_market != market or side not in breakdown:
+            continue
+        total = _money_amount(row.get("Total"))
+        breakdown[side]["play"] += total
+        values = _dashboard_result_values(base_market, side, result_doc)
+        wins = settlement_service._winning_rows(row, values, rates) if values else []
+        breakdown[side]["win"] += _money_amount(sum(item.get("win", 0) for item in wins))
+        for winner in wins:
+            kind = "panna" if "panna" in str(winner.get("kind", "")) else str(winner.get("kind", ""))
+            if kind not in breakdown[side]:
+                continue
+            breakdown[side][kind]["win"] += _money_amount(winner.get("win", 0))
+            number = str(winner.get("number", ""))
+            item = breakdown[side]["winning_numbers"][kind].setdefault(number, {"number": number, "stake": 0, "win": 0})
+            item["stake"] += _money_amount(winner.get("stake", 0))
+            item["win"] += _money_amount(winner.get("win", 0))
+        for bet in row.get("Result", []) or []:
+            if not isinstance(bet, (list, tuple)) or len(bet) < 2:
+                continue
+            amount = _money_amount(bet[-1])
+            for token in bet[:-1]:
+                token = str(token).strip()
+                if token.isdigit() and 1 <= len(token) <= 3:
+                    number_table[token] = number_table.get(token, 0) + amount
+                    kind = "ank" if len(token) == 1 else "jodi" if len(token) == 2 else "panna"
+                    breakdown[side][kind]["play"] += amount
+    for side in breakdown.values():
+        side["winning_numbers"] = {
+            kind: sorted(numbers.values(), key=lambda item: item["number"])
+            for kind, numbers in side["winning_numbers"].items()
+        }
+    return {"number_table": dict(sorted(number_table.items(), key=lambda item: (len(item[0]), item[0]))), "breakdown": breakdown}
+
+
 @app.get("/desktop/dashboard")
 def desktop_dashboard(
     date: str = Query(...),
@@ -220,28 +263,6 @@ def desktop_dashboard(
         "OP": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}, "winning_numbers": {"ank": {}, "panna": {}, "jodi": {}}},
         "CL": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}, "winning_numbers": {"ank": {}, "panna": {}, "jodi": {}}},
     }
-
-
-@app.get("/desktop/final-options")
-def desktop_final_options(client_name: str = Query(""), session_name: str = Query("_runtime")):
-    return {"output_groups": configured_output_groups(client_name, session_name)}
-
-
-@app.post("/desktop/run-final")
-def desktop_run_final(payload: ManualFinalRequest):
-    """Manual equivalent of the output-group `last` trigger from Dashboard."""
-    output_name = payload.output_group.strip()
-    if output_name not in configured_output_groups(payload.client_name, payload.session_name):
-        raise HTTPException(status_code=422, detail="Select a configured output group")
-    output_jid = output_name if output_name.endswith("@g.us") else db.group_jid_for_name(
-        payload.client_name, payload.session_name, output_name
-    )
-    if not output_jid:
-        raise HTTPException(status_code=409, detail="Output group is not resolved yet. Start the service once, then retry.")
-    trigger_id = f"desktop-final:{db.date}:{output_jid}"
-    return api_response(output_settlement_service.queue_group(
-        payload.client_name, payload.session_name, output_jid, trigger_id
-    ))
     for row in rows:
         row_market = str(row.get("Market", ""))
         base_market, side = settlement_service._market_parts(row_market)
@@ -298,6 +319,28 @@ def desktop_run_final(payload: ManualFinalRequest):
         "breakdown": breakdown,
         "messages": messages,
     }
+
+
+@app.get("/desktop/final-options")
+def desktop_final_options(client_name: str = Query(""), session_name: str = Query("_runtime")):
+    return {"output_groups": configured_output_groups(client_name, session_name)}
+
+
+@app.post("/desktop/run-final")
+def desktop_run_final(payload: ManualFinalRequest):
+    """Manual equivalent of the output-group `last` trigger from Dashboard."""
+    output_name = payload.output_group.strip()
+    if output_name not in configured_output_groups(payload.client_name, payload.session_name):
+        raise HTTPException(status_code=422, detail="Select a configured output group")
+    output_jid = output_name if output_name.endswith("@g.us") else db.group_jid_for_name(
+        payload.client_name, payload.session_name, output_name
+    )
+    if not output_jid:
+        raise HTTPException(status_code=409, detail="Output group is not resolved yet. Start the service once, then retry.")
+    trigger_id = f"desktop-final:{db.date}:{output_jid}"
+    return api_response(output_settlement_service.queue_group(
+        payload.client_name, payload.session_name, output_jid, trigger_id
+    ))
 
 
 def verify(secret: str | None) -> None:
@@ -408,8 +451,9 @@ def desktop_transactions(
     query = dict(base_query)
     if contact:
         query["Contact"] = contact
+    raw_rows = list(collection.find(query).sort([("Time", 1), ("_id", 1)]))
     rows = []
-    for row in collection.find(query).sort([("Time", 1), ("_id", 1)]):
+    for row in raw_rows:
         base_market, side = settlement_service._market_parts(str(row.get("Market", "")))
         result_ready = bool(base_market and settlement_service._result_values(base_market, side, result_doc))
         rows.append({
@@ -426,10 +470,16 @@ def desktop_transactions(
             "settled": bool(row.get("Settled", False)),
             "result_ready": result_ready,
         })
+    market_names = sorted({settlement_service._market_parts(str(row.get("Market", "")))[0] for row in raw_rows if settlement_service._market_parts(str(row.get("Market", "")))[0]})
+    market_details = {
+        market: _market_play_breakdown(raw_rows, market, result_doc, rates)
+        for market in market_names
+    }
     return {
         "date": date,
         "contacts": [{"value": item, "name": contact_names[item]} for item in contacts],
         "transactions": rows,
+        "market_details": market_details,
         "total_play": sum(item["total"] for item in rows),
     }
 

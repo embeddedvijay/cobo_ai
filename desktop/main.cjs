@@ -97,8 +97,10 @@ function runtimeConfigFromJson(value, projectDirectory) {
   const outputGroups = new Set();
   for (const detail of Object.values(client.in_contacts || {})) {
     const director = detail?.Director || {};
+    const overflow = detail?.overflow_limits || {};
     if (director.all_table) outputGroups.add(String(director.all_table));
     if (director.all_fast_forward) outputGroups.add(String(director.all_fast_forward));
+    if (overflow.output_group) outputGroups.add(String(overflow.output_group));
     const rows = director.market_overrides || director;
     for (const route of Object.values(rows)) {
       if (route?.table) outputGroups.add(String(route.table));

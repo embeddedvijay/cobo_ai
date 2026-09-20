@@ -149,28 +149,58 @@ class Database:
         return str(row["group_name"]) if row and row.get("group_name") else None
 
     def group_jid_for_name(self, client_name: str, session_name: str, group_name: str) -> str | None:
+        resolved = self.resolve_output_group_name(client_name, session_name, group_name)
+        return resolved.get("jid") if resolved.get("status") in {"exact", "fuzzy"} else None
+
+    def resolve_output_group_name(self, client_name: str, session_name: str, group_name: str) -> dict:
+        """Resolve a typed output name and explain why it is unsafe when it cannot.
+
+        The desktop uses this to show a red field before config is saved. The
+        bridge repeats the same guarded resolution at connection time, so UI
+        feedback is helpful but never the only delivery protection.
+        """
         target = " ".join(str(group_name or "").casefold().split())
         if not target:
-            return None
-        candidates: list[tuple[float, str]] = []
+            return {"status": "empty"}
+        if "@" in target:
+            row = self.group_mappings.find_one(
+                {"client_name": client_name, "session_name": session_name, "jid": str(group_name).strip()},
+                {"group_name": 1, "jid": 1, "roles": 1},
+            )
+            if row and "input" not in (row.get("roles") or []):
+                return {"status": "exact", "group_name": str(row.get("group_name") or group_name), "jid": str(row["jid"])}
+        candidates: list[dict] = []
+        has_output_mapping = False
         for row in self.group_mappings.find(
             {"client_name": client_name, "session_name": session_name},
-            {"group_name": 1, "group_name_key": 1, "jid": 1},
+            {"group_name": 1, "group_name_key": 1, "jid": 1, "roles": 1},
         ):
+            if "input" in (row.get("roles") or []):
+                continue
+            has_output_mapping = True
             name = " ".join(str(row.get("group_name") or "").casefold().split())
             key = " ".join(str(row.get("group_name_key") or "").casefold().split())
             if target in {name, key} and row.get("jid"):
-                return str(row["jid"])
+                return {"status": "exact", "group_name": str(row.get("group_name") or ""), "jid": str(row["jid"])}
             if len(target) >= 5 and name and row.get("jid"):
-                candidates.append((SequenceMatcher(None, target, name).ratio(), str(row["jid"])))
-        # Keep Run Final consistent with the bridge: accept only a strong,
-        # clearly better output-name match. Similar group names remain
-        # unresolved rather than risking delivery to the wrong customer.
-        candidates.sort(key=lambda item: item[0], reverse=True)
-        if candidates and candidates[0][0] >= 0.88:
-            if len(candidates) == 1 or candidates[0][0] - candidates[1][0] >= 0.05:
-                return candidates[0][1]
-        return None
+                candidates.append({
+                    "score": SequenceMatcher(None, target, name).ratio(),
+                    "group_name": str(row.get("group_name") or ""),
+                    "jid": str(row["jid"]),
+                })
+        candidates.sort(key=lambda item: item["score"], reverse=True)
+        if candidates and candidates[0]["score"] >= 0.88:
+            best = candidates[0]
+            second = candidates[1] if len(candidates) > 1 else None
+            if not second or best["score"] - second["score"] >= 0.05:
+                return {"status": "fuzzy", **best, "score": round(best["score"] * 100)}
+            return {
+                "status": "ambiguous",
+                "matches": [{"group_name": item["group_name"], "score": round(item["score"] * 100)} for item in candidates[:2]],
+            }
+        if not has_output_mapping:
+            return {"status": "unavailable"}
+        return {"status": "not_found"}
 
     def available_output_groups(self, client_name: str, session_name: str) -> list[str]:
         """Connected-account group names safe to offer as output destinations."""

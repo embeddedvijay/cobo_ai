@@ -9,6 +9,10 @@ let botProcess;
 const statePath = () => path.join(app.getPath('userData'), 'cobo-state.json');
 const configDir = () => path.join(app.getPath('userData'), 'configs');
 const defaultConfigPath = () => path.join(__dirname, 'config.example.json');
+const sourceProjectDirectory = () => {
+  const candidate = path.resolve(__dirname, '..');
+  return isProjectWorkspace(candidate) ? candidate : '';
+};
 
 function readState() {
   try { return JSON.parse(fs.readFileSync(statePath(), 'utf8')); }
@@ -30,11 +34,19 @@ function isOldDemoWorkspace(filePath) {
 }
 function ensureWorkspaceConfig() {
   const state = readState();
-  if (state.configPath && fs.existsSync(state.configPath) && !isOldDemoWorkspace(state.configPath)) return state;
+  const botDirectory = isProjectWorkspace(state.botDirectory) ? state.botDirectory : sourceProjectDirectory();
+  if (state.configPath && fs.existsSync(state.configPath) && !isOldDemoWorkspace(state.configPath)) {
+    if (botDirectory !== state.botDirectory) {
+      const next = { ...state, botDirectory };
+      saveState(next);
+      return next;
+    }
+    return state;
+  }
   fs.mkdirSync(configDir(), { recursive: true });
   const configPath = state.configPath || path.join(configDir(), 'workspace-config.json');
   fs.copyFileSync(defaultConfigPath(), configPath);
-  const next = { ...state, configPath };
+  const next = { ...state, botDirectory, configPath };
   saveState(next);
   return next;
 }

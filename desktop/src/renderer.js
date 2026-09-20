@@ -58,7 +58,7 @@ function destinationSelect(kind, current, attribute) {
 const money = value => `₹${Number(value || 0).toLocaleString('en-IN')}`;
 const messagePreview = value => esc(value || '').replace(/\n/g, '<br>');
 function liveMessageCard(row) {
-  return `<article class="live-message"><div><b>${esc(row.group)}</b><span>${esc(row.market || 'Unknown market')} · ${esc(row.time || '—')}</span></div><div class="live-raw">${messagePreview(row.message)}</div><strong>${money(row.total)}</strong></article>`;
+  return `<article class="live-message" data-record-id="${esc(row.id)}"><div><b>${esc(row.group)}</b><span>${esc(row.market || 'Unknown market')} · ${esc(row.time || '—')}</span></div><div class="live-raw">${messagePreview(row.message)}</div><strong>${money(row.total)}</strong><button class="reject-live" data-action="reject-live">Reject</button></article>`;
 }
 function liveMarketCard(row, index) {
   const colour = ['red','violet','blue','green'][index % 4];
@@ -83,6 +83,12 @@ async function loadDashboard() {
     $('#dashboardTableTitle').textContent = dashboardMarket ? pretty(dashboardMarket) : 'Select market';
     $('#dashboardNumbers').innerHTML = renderDashboardNumbers(data.number_table);
   } catch (error) { $('#customerList').innerHTML = `<div class="empty-data">${esc(error.message)}</div>`; }
+}
+async function rejectLiveMessage(card) {
+  if (!window.confirm('Reject this message? It will be removed from play, win and final settlement.')) return;
+  const button = card.querySelector('[data-action="reject-live"]'); button.disabled = true; button.textContent = 'Removing…';
+  try { await window.cobo.rejectTransaction({ date: todayBusinessDate(), record_id: card.dataset.recordId }); await loadDashboard(); }
+  catch (error) { button.disabled = false; button.textContent = 'Reject'; alert(error.message); }
 }
 
 async function mutate(change) {
@@ -271,6 +277,7 @@ $('#dashboardStart').addEventListener('click',startService);
 $('#refreshDashboard').addEventListener('click',loadDashboard);
 $('#dashboardMarketSelect').addEventListener('change',event=>{dashboardMarket=event.target.value;loadDashboard();});
 $('#marketList').addEventListener('click',event=>{const button=event.target.closest('[data-dashboard-market]');if(button){dashboardMarket=button.dataset.dashboardMarket;loadDashboard();}});
+$('#customerList').addEventListener('click',event=>{const button=event.target.closest('[data-action="reject-live"]');if(button)rejectLiveMessage(button.closest('.live-message'));});
 $('#refreshResults').addEventListener('click',loadResults);
 $('#resultCards').addEventListener('click',event=>{const button=event.target.closest('[data-action="save-result"]');if(button)saveResult(button.closest('.result-card'));});
 $('#refreshTransactions').addEventListener('click',loadTransactions);

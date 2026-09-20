@@ -149,7 +149,7 @@ async function mutate(change) {
     change(next);
     const result = await window.cobo.saveConfig(JSON.stringify(next));
     render(result);
-    setMessage('Saved');
+    setMessage(result.restarted ? 'Saved · service restarted' : 'Saved');
   } catch (error) { setMessage(error.message); }
 }
 function render(next) {

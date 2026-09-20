@@ -155,6 +155,18 @@ class OutputSettlementService:
             f"*TOTAL PLAY = {total_play}*",
         ])
 
+    @staticmethod
+    def _input_group_message_play(business_date: str, message_totals: list[int], total_play: int) -> str:
+        """Show the accepted play totals in the same order the group sent them."""
+        year, month, day = business_date.split("-")
+        expression = " + ".join(str(_amount(total)) for total in message_totals)
+        return "\n".join([
+            f"*DATE: {day}-{month}-{year}*",
+            "*MESSAGE-WISE PLAY*",
+            f"{expression} = *{total_play}*",
+            f"*TOTAL PLAY = {total_play}*",
+        ])
+
     def _queue_input_group_totals(self, client_name: str, session_name: str, trigger_message_id: str, icons: dict, limit: int, business_date: str) -> dict:
         """Queue one end-total per input group, based only on that group's plays.
 
@@ -192,7 +204,9 @@ class OutputSettlementService:
                 "total_play": 0,
             })
             group["raws"].append(raw)
-            group["total_play"] += _amount(transaction.get("Total"))
+            message_total = _amount(transaction.get("Total"))
+            group.setdefault("message_totals", []).append(message_total)
+            group["total_play"] += message_total
             for win in settlement_service._winning_rows(transaction, values, rates):
                 category = win["kind"].replace("single_panna", "sp").replace("double_panna", "dp").replace("triple_panna", "tp")
                 group["totals"][category] += _amount(win["win"])
@@ -220,6 +234,22 @@ class OutputSettlementService:
                 # Output per-table replies (80) and its final summary (70)
                 # leave before this input-group total (60).
                 "priority": 60,
+                "business_date": business_date,
+            })
+            # This follows the date-wise final total in the same input group,
+            # and makes every accepted message amount auditable at a glance.
+            db.enqueue({
+                "client_name": client_name,
+                "session_name": session_name,
+                "channel": "whatsapp",
+                "target": source_jid,
+                "text": self._input_group_message_play(business_date, group["message_totals"], group["total_play"]),
+                "quote": None,
+                "kind": "settlement_input_group_message_play",
+                "dedupe_key": f"input-message-play:{source_jid}:{business_date}:{trigger_message_id}",
+                # The group total (60) is deliberately delivered immediately
+                # before this message-wise expression (59).
+                "priority": 59,
                 "business_date": business_date,
             })
             for raw in reserved:

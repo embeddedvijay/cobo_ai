@@ -6,6 +6,7 @@ let selectedMarketKey = '';
 let overrideTargetGroup = '';
 let selectedMarketDays = new Set();
 let loadedTransactions = [];
+let dashboardMarket = '';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -14,6 +15,7 @@ const setMessage = value => { const el = $('#saveMessage'); if (el) el.textConte
 function goto(page) {
   pages.forEach(item => item.classList.toggle('active', item.id === page));
   nav.forEach(item => item.classList.toggle('active', item.dataset.page === page));
+  if (page === 'dashboard') loadDashboard();
   if (page === 'results') loadResults();
   if (page === 'transactions') loadTransactions();
 }
@@ -51,6 +53,36 @@ function destinationSelect(kind, current, attribute) {
   const options = destinationNames(kind, current)
     .map(value => `<option value="${esc(value)}" ${value === current ? 'selected' : ''}>${esc(value)}</option>`).join('');
   return `<select ${attribute}><option value="" ${current ? '' : 'selected'}>${label}</option>${options}</select>`;
+}
+
+const money = value => `₹${Number(value || 0).toLocaleString('en-IN')}`;
+const messagePreview = value => esc(value || '').replace(/\n/g, '<br>');
+function liveMessageCard(row) {
+  return `<article class="live-message"><div><b>${esc(row.group)}</b><span>${esc(row.market || 'Unknown market')} · ${esc(row.time || '—')}</span></div><div class="live-raw">${messagePreview(row.message)}</div><strong>${money(row.total)}</strong></article>`;
+}
+function liveMarketCard(row, index) {
+  const colour = ['red','violet','blue','green'][index % 4];
+  return `<button class="live-market ${colour} ${row.market === dashboardMarket ? 'selected' : ''}" data-dashboard-market="${esc(row.market)}"><b>${esc(pretty(row.market))}</b><div><span>PLAY <strong>${money(row.play)}</strong></span><span>WIN <strong>${money(row.win)}</strong></span></div><small>${row.messages} messages</small></button>`;
+}
+function renderDashboardNumbers(values) {
+  const rows = Object.entries(values || {});
+  return rows.length ? rows.map(([number, amount]) => `<div><span>${esc(number)}</span><b>${money(amount)}</b></div>`).join('') + `<footer>TOTAL <b>${money(rows.reduce((sum, [, amount]) => sum + Number(amount || 0), 0))}</b></footer>` : '<p class="empty-data">No accepted number for this market yet.</p>';
+}
+async function loadDashboard() {
+  if (!window.cobo.dashboard) return;
+  try {
+    const data = await window.cobo.dashboard({ date: todayBusinessDate(), market: dashboardMarket });
+    dashboardMarket = data.selected_market || '';
+    $('#metricCards').innerHTML = (data.customers || []).map((row, index) => `<article class="metric live-customer metric-${index % 4}"><small>${esc(row.name)}</small><div class="live-progress"><i style="width:${Math.min(100, Number(row.play || 0) ? 62 : 0)}%"></i></div><div class="live-totals"><span>PLAY <b>${money(row.play)}</b></span><span>WIN <b>${money(row.win)}</b></span></div></article>`).join('') || '<div class="metric"><small>Today Play</small><strong>₹0</strong><span>No accepted message yet</span></div>';
+    $('#contactCount').textContent = `${data.customers?.length || 0} groups`;
+    $('#marketCount').textContent = `${data.markets?.length || 0} markets`;
+    $('#customerList').innerHTML = (data.messages || []).map(liveMessageCard).join('') || '<div class="empty-data">No accepted play yet.</div>';
+    $('#marketList').innerHTML = (data.markets || []).map(liveMarketCard).join('') || '<div class="empty-data">No market activity yet.</div>';
+    const select = $('#dashboardMarketSelect');
+    select.innerHTML = (data.markets || []).map(row => `<option value="${esc(row.market)}" ${row.market === dashboardMarket ? 'selected' : ''}>${esc(pretty(row.market))}</option>`).join('') || '<option value="">No active market</option>';
+    $('#dashboardTableTitle').textContent = dashboardMarket ? pretty(dashboardMarket) : 'Select market';
+    $('#dashboardNumbers').innerHTML = renderDashboardNumbers(data.number_table);
+  } catch (error) { $('#customerList').innerHTML = `<div class="empty-data">${esc(error.message)}</div>`; }
 }
 
 async function mutate(change) {
@@ -211,7 +243,7 @@ async function saveTransaction(row) {
   catch (error) { button.textContent = 'Save'; $('#transactionStatus').textContent = error.message; }
 }
 function log(value){const out=$('#logs');const clean=String(value).split('\n').map(line=>line.length>420?`${line.slice(0,420)}…`:line).join('\n');out.textContent=(out.textContent+'\n'+clean).trim().slice(-9000);out.scrollTop=out.scrollHeight;}
-function setService(status){$('#botState').textContent=status.running?'Running':'Stopped';$('#botDot').classList.toggle('running',Boolean(status.running));if(status.code!==undefined)log('Service stopped with code '+status.code);}
+function setService(status){$('#botState').textContent=status.running?'Running':'Stopped';$('#botDot').classList.toggle('running',Boolean(status.running));if(status.running&&$('#dashboard')?.classList.contains('active'))setTimeout(loadDashboard,600);if(status.code!==undefined)log('Service stopped with code '+status.code);}
 
 nav.forEach(button=>button.addEventListener('click',()=>goto(button.dataset.page)));
 document.querySelectorAll('[data-goto]').forEach(button=>button.addEventListener('click',()=>{goto(button.dataset.goto);if(button.dataset.gotoTab)gotoTab(button.dataset.gotoTab);}));
@@ -236,6 +268,9 @@ async function chooseWorkspace(){try{const state=await window.cobo.chooseBotDire
 async function startService(){try{await window.cobo.startBot();log('Service started.');}catch(error){alert(error.message);}}
 $('#chooseBot').addEventListener('click',chooseWorkspace);$('#launchService').addEventListener('click',startService);$('#stopBot').addEventListener('click',()=>window.cobo.stopBot());
 $('#dashboardStart').addEventListener('click',startService);
+$('#refreshDashboard').addEventListener('click',loadDashboard);
+$('#dashboardMarketSelect').addEventListener('change',event=>{dashboardMarket=event.target.value;loadDashboard();});
+$('#marketList').addEventListener('click',event=>{const button=event.target.closest('[data-dashboard-market]');if(button){dashboardMarket=button.dataset.dashboardMarket;loadDashboard();}});
 $('#refreshResults').addEventListener('click',loadResults);
 $('#resultCards').addEventListener('click',event=>{const button=event.target.closest('[data-action="save-result"]');if(button)saveResult(button.closest('.result-card'));});
 $('#refreshTransactions').addEventListener('click',loadTransactions);

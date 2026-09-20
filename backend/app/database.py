@@ -147,6 +147,20 @@ class Database:
         )
         return str(row["group_name"]) if row and row.get("group_name") else None
 
+    def group_jid_for_name(self, client_name: str, session_name: str, group_name: str) -> str | None:
+        target = " ".join(str(group_name or "").casefold().split())
+        if not target:
+            return None
+        for row in self.group_mappings.find(
+            {"client_name": client_name, "session_name": session_name},
+            {"group_name": 1, "group_name_key": 1, "jid": 1},
+        ):
+            name = " ".join(str(row.get("group_name") or "").casefold().split())
+            key = " ".join(str(row.get("group_name_key") or "").casefold().split())
+            if target in {name, key} and row.get("jid"):
+                return str(row["jid"])
+        return None
+
     def cancel_target(self, client_name: str, session_name: str, source_jid: str, quoted_message_id: str) -> dict | None:
         """Find the original input behind a WhatsApp quoted cancel command.
 

@@ -167,6 +167,14 @@ class Session(Reply_processor, Scheduler):
         self.send_message_to(target, text, priority=70)
         return True
 
+    def forward_valid_play(self, contact: str, market: str, text: str) -> bool:
+        """Send a valid accepted input directly only when this rule has a Fast Forward destination."""
+        target = self.director_target(contact, market, "fast_forward")
+        if not target:
+            return False
+        self.send_message_to(target, text, market=market, priority=75)
+        return True
+
     def send_instant_table(self, contact: str, market: str, result_list: list) -> bool:
         target = self.director_target(contact, market, "table")
         if not target:

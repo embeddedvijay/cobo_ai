@@ -228,12 +228,23 @@ ipcMain.handle('config:load', () => {
   const { raw } = loadConfig(state.configPath);
   return { raw, summary: configSummary(state.configPath) };
 });
-ipcMain.handle('config:save', (_event, raw) => {
+ipcMain.handle('config:save', async (_event, raw) => {
   const state = ensureWorkspaceConfig();
   const parsed = JSON.parse(raw);
   normaliseConfig(parsed);
   fs.writeFileSync(state.configPath, JSON.stringify(parsed, null, 2));
-  return configSummary(state.configPath);
+  const restarted = Boolean(botProcess);
+  if (restarted) {
+    const current = botProcess;
+    const finished = new Promise(resolve => {
+      const timeout = setTimeout(resolve, 5000);
+      current.once('close', () => { clearTimeout(timeout); resolve(); });
+    });
+    stopBot();
+    await finished;
+    await startBotService();
+  }
+  return { ...configSummary(state.configPath), restarted };
 });
 ipcMain.handle('desktop:results', (_event, date) => {
   const state = ensureWorkspaceConfig();
@@ -272,7 +283,7 @@ ipcMain.handle('bot:choose-directory', async () => {
   saveState(next);
   return next;
 });
-ipcMain.handle('bot:start', async () => {
+async function startBotService() {
   const state = ensureWorkspaceConfig();
   if (botProcess) return { running: true };
   const projectDirectory = isProjectWorkspace(state.botDirectory) ? state.botDirectory : sourceProjectDirectory();
@@ -294,5 +305,6 @@ ipcMain.handle('bot:start', async () => {
   }
   emit('bot-status', { running: true });
   return { running: true };
-});
+}
+ipcMain.handle('bot:start', startBotService);
 ipcMain.handle('bot:stop', () => { stopBot(); return { running: false }; });

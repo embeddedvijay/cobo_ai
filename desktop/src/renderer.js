@@ -18,10 +18,13 @@ const setMessage = value => { const el = $('#saveMessage'); if (el) el.textConte
 function goto(page) {
   pages.forEach(item => item.classList.toggle('active', item.id === page));
   nav.forEach(item => item.classList.toggle('active', item.dataset.page === page));
+  if (page === 'config') showConfigHome();
   if (page === 'dashboard') loadDashboard();
   if (page === 'results') loadResults();
   if (page === 'transactions') loadTransactions();
 }
+function showConfigHome() { $('#configHome').hidden = false; $('#configDetail').hidden = true; }
+function showConfigDetail(tab = 'timings') { $('#configHome').hidden = true; $('#configDetail').hidden = false; gotoTab(tab); }
 function gotoTab(tab) {
   tabs.forEach(item => item.classList.toggle('active-tab', item.dataset.tab === tab));
   document.querySelectorAll('.tab-page').forEach(item => item.classList.toggle('active', item.id === tab));
@@ -103,10 +106,19 @@ async function runFinalSettlement() {
 async function loadDashboard() {
   if (!window.cobo.dashboard) return;
   if (dashboardLoading) return;
-  if ($('#botState')?.textContent !== 'Running') { $('#customerList').innerHTML = '<div class="empty-data">Start Service to load live Play, Win and messages.</div>'; return; }
+  if ($('#botState')?.textContent !== 'Running') {
+    $('#dashboardTotalPlay').textContent = '₹0'; $('#dashboardTotalWin').textContent = '₹0';
+    $('#metricCards').innerHTML = '<div class="metric"><small>Live status</small><strong>Stopped</strong><span>Start Service to load live records.</span></div>';
+    $('#contactCount').textContent = '0 groups'; $('#marketCount').textContent = '0 markets';
+    $('#customerList').innerHTML = '<div class="empty-data">Start Service to load live Play, Win and messages.</div>';
+    $('#marketList').innerHTML = '<div class="empty-data">No market activity yet.</div>';
+    $('#dashboardMarketSelect').innerHTML = '<option value="">No active market</option>';
+    $('#dashboardTableTitle').textContent = 'Select market'; $('#dashboardNumbers').innerHTML = '';
+    return;
+  }
   dashboardLoading = true;
   try {
-    const data = await window.cobo.dashboard({ date: todayBusinessDate(), market: dashboardMarket, contact: dashboardContact });
+    const data = (await window.cobo.dashboard({ date: todayBusinessDate(), market: dashboardMarket, contact: dashboardContact })) || {};
     dashboardMarket = data.selected_market || '';
     $('#dashboardTotalPlay').textContent = money(data.total_play);
     $('#dashboardTotalWin').textContent = money(data.total_win);
@@ -143,16 +155,16 @@ function render(next) {
   summary = next || summary;
   const client = summary?.clientName || 'vijay';
   $('#clientName').textContent = client;
-  $('#contactCount').textContent = `${summary?.contactCount || 0} active`;
-  $('#marketCount').textContent = `${summary?.marketCount || 0} timings`;
-  $('#metricCards').innerHTML = [
+  $('#configOverviewGroupCount').textContent = `${summary?.contactCount || 0} active`;
+  $('#configOverviewMarketCount').textContent = `${summary?.marketCount || 0} timings`;
+  $('#configOverviewMetrics').innerHTML = [
     ['Input Groups', summary?.contactCount || 0, 'Configured customer groups'],
     ['Market Timings', summary?.marketCount || 0, 'Open and close rules'],
     ['Service Status', $('#botState')?.textContent || 'Stopped', 'Local service'],
     ['Today Play', '—', 'Available while service runs']
   ].map((x,i) => `<div class="metric metric-${i}"><small>${x[0]}</small><strong>${esc(x[1])}</strong><span>${x[2]}</span></div>`).join('');
-  $('#customerList').innerHTML = contacts().map(([name, item]) => `<div class="crm-customer-row"><b>${esc(name)}</b><span>${esc(item.LD ?? 100)}%</span><span>₹${esc(item.Limit ?? 0)}</span><span>${item.instant_cutting ? 'Instant' : 'Scheduled'}</span></div>`).join('') || '<p class="muted">No input group configured.</p>';
-  $('#marketList').innerHTML = timingRows().slice(0,8).map(([name, row]) => `<div class="crm-market-row"><div><b>${esc(pretty(name))}</b><small>${phase(name)} · ${hm(row, 0)} – ${hm(row, 2)}</small></div><span>● Active</span></div>`).join('');
+  $('#configOverviewGroups').innerHTML = contacts().map(([name, item]) => `<div class="crm-customer-row"><b>${esc(name)}</b><span>${esc(item.LD ?? 100)}%</span><span>₹${esc(item.Limit ?? 0)}</span><span>${item.instant_cutting ? 'Instant' : 'Scheduled'}</span></div>`).join('') || '<p class="muted">No input group configured.</p>';
+  $('#configOverviewMarkets').innerHTML = timingRows().slice(0,8).map(([name, row]) => `<div class="crm-market-row"><div><b>${esc(pretty(name))}</b><small>${phase(name)} · ${hm(row, 0)} – ${hm(row, 2)}</small></div><span>● Active</span></div>`).join('');
   renderTimingTable();
   renderGroups();
 }
@@ -341,6 +353,8 @@ function log(value){const out=$('#logs');const clean=String(value).split('\n').m
 function setService(status){const state=status.running?'Running':status.starting?'Starting…':'Stopped';$('#botState').textContent=state;$('#botDot').classList.toggle('running',Boolean(status.running));if(status.running&&$('#dashboard')?.classList.contains('active'))setTimeout(loadDashboard,600);if(status.code!==undefined)log('Service stopped with code '+status.code);}
 
 nav.forEach(button=>button.addEventListener('click',()=>goto(button.dataset.page)));
+document.querySelectorAll('[data-open-config]').forEach(button=>button.addEventListener('click',()=>showConfigDetail(button.dataset.openTab || 'timings')));
+$('#configBack').addEventListener('click',showConfigHome);
 document.querySelectorAll('[data-goto]').forEach(button=>button.addEventListener('click',()=>{goto(button.dataset.goto);if(button.dataset.gotoTab)gotoTab(button.dataset.gotoTab);}));
 tabs.forEach(button=>button.addEventListener('click',()=>gotoTab(button.dataset.tab)));
 document.querySelectorAll('[data-tab-target]').forEach(button=>button.addEventListener('click',()=>gotoTab(button.dataset.tabTarget)));

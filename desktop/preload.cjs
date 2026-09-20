@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('cobo', {
   saveConfig: raw => ipcRenderer.invoke('config:save', raw),
   dashboard: payload => ipcRenderer.invoke('desktop:dashboard', payload),
   outputGroups: () => ipcRenderer.invoke('desktop:output-groups'),
+  resolveOutputGroup: name => ipcRenderer.invoke('desktop:resolve-output-group', name),
   groupMappings: () => ipcRenderer.invoke('desktop:group-mappings'),
   finalOptions: () => ipcRenderer.invoke('desktop:final-options'),
   runFinal: payload => ipcRenderer.invoke('desktop:run-final', payload),

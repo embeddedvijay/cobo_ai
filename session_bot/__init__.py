@@ -139,6 +139,68 @@ class Session(Reply_processor, Scheduler):
         settings = self.rule_for(contact).get("reply_settings", {}) or {}
         return bool(settings.get(reply_type, True))
 
+    @staticmethod
+    def _whole_amount(value) -> int:
+        try:
+            return max(0, int(float(str(value or 0))))
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _play_kind(row) -> str | None:
+        """Classify one accepted HLA row without changing legacy parsing."""
+        tokens = [str(value).strip() for value in row[:-1] if str(value).strip().isdigit()]
+        if not tokens:
+            return None
+        token = tokens[0]
+        if len(token) == 1:
+            return "ank"
+        if len(token) == 2:
+            return "jodi"
+        if len(token) == 3:
+            unique = len(set(token))
+            return "tp" if unique == 1 else "dp" if unique == 2 else "sp"
+        return None
+
+    def send_category_overflow(self, contact: str, market: str, result_list: list) -> bool:
+        """Instantly route only a 100%-LD group's per-line excess play.
+
+        This deliberately creates a normal legacy output with no settlement
+        payload: it is a separate overflow route and must never alter the
+        input group's play, LD table, or final-total accounting.
+        """
+        rule = self.rule_for(contact)
+        if self._whole_amount(rule.get("LD", 100)) != 100:
+            return False
+        settings = rule.get("overflow_limits", {}) or {}
+        target = str(settings.get("output_group") or "").strip()
+        if not target:
+            return False
+        rows, total = [], 0
+        for row in result_list or []:
+            if not isinstance(row, (list, tuple)) or len(row) < 2:
+                continue
+            kind = self._play_kind(row)
+            limit = self._whole_amount(settings.get(kind or "", 0))
+            amount = self._whole_amount(row[-1])
+            if not kind or limit <= 0 or amount <= limit:
+                continue
+            excess = amount - limit
+            key = "=".join(str(part) for part in row[:-1])
+            rows.append(f"*{key}={excess}*")
+            total += excess
+        if total <= 0:
+            return False
+        self.send_message_to(
+            target,
+            "\n".join([f"*{market}*", "*LIMIT OVERFLOW*", *rows, f"*TOTAL={total}*" ]),
+            market=market,
+            # Higher than an instant LD table (100): excess must leave first.
+            priority=110,
+        )
+        print(f"Category overflow queued: {contact}/{market} -> {target}; total={total}", flush=True)
+        return True
+
     def format_ld_table(self, market: str, result_list: list, ld_value) -> tuple[str, int, dict]:
         # Match the legacy scheduler rounding: int(amount * LD / 100).
         try:

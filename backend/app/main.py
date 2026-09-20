@@ -119,6 +119,11 @@ def desktop_output_groups(client_name: str = Query(""), session_name: str = Quer
     return {"groups": db.available_output_groups(client_name, session_name)}
 
 
+@app.get("/desktop/group-mappings")
+def desktop_group_mappings(client_name: str = Query(""), session_name: str = Query("_runtime")):
+    return {"mappings": db.resolved_group_mappings(client_name, session_name)}
+
+
 def desktop_market_names(client_name: str, session_name: str, result_doc: dict) -> list[str]:
     names = set()
     try:

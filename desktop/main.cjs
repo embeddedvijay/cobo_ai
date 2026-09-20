@@ -213,8 +213,17 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 app.on('before-quit', () => stopBot());
 
 function stopBot() {
-  if (!botProcess) return;
-  botProcess.kill('SIGTERM');
+  const current = botProcess;
+  if (!current) return;
+  // `npm start` -> start.sh -> node creates a process tree. Killing only npm
+  // left the bridge alive and it kept reconnecting after the desktop said
+  // Stopped. On Linux launch in its own group and terminate that whole group.
+  if (process.platform === 'win32') {
+    current.kill('SIGTERM');
+  } else {
+    try { process.kill(-current.pid, 'SIGTERM'); }
+    catch (_) { current.kill('SIGTERM'); }
+  }
   botProcess = undefined;
   emit('bot-status', { running: false });
 }
@@ -309,6 +318,7 @@ async function startBotService() {
   botProcess = spawn(npm, ['start'], {
     cwd: projectDirectory,
     env: { ...process.env, COBO_CONFIG_PATH: state.configPath, COBO_RUNTIME_CONFIG_PATH: runtimeConfigPath, COBO_CONFIG_FORMAT: 'json' },
+    detached: process.platform !== 'win32',
     windowsHide: true
   });
   botProcess.stdout.on('data', data => emit('bot-log', data.toString()));

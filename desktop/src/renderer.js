@@ -255,11 +255,34 @@ function oldMarketCard(item) {
   const selected = ($('#transactionMarket')?.value || '') === item.market;
   return `<button class="old-market-card ${selected ? 'selected' : ''}" data-transaction-market="${esc(item.market)}"><b>${esc(pretty(item.market))}</b><div><span>OPEN<br><strong>${money(item.open_play)} / ${money(item.open_win)}</strong></span><span>CLOSE<br><strong>${money(item.close_play)} / ${money(item.close_win)}</strong></span></div><footer>PLAY <strong>${money(item.play)}</strong><em>WIN ${money(item.win)}</em><small>${item.messages} records</small></footer></button>`;
 }
+function transactionCustomerCards(rows) {
+  const customers = {};
+  rows.forEach(row => {
+    const contact = String(row.contact || '');
+    const item = customers[contact] ||= { contact, name: row.contact_name || contact || 'Unknown customer', play: 0, win: 0, messages: 0 };
+    item.play += Number(row.total || 0); item.win += Number(row.win || 0); item.messages += 1;
+  });
+  return Object.values(customers).sort((a,b) => b.play - a.play);
+}
+function oldCustomerCard(item, index) {
+  const percent = item.play ? Math.min(100, Math.max(10, (item.win / item.play) * 45 + 25)) : 0;
+  return `<button class="old-customer-card shade-${index % 4}" data-transaction-contact="${esc(item.contact)}"><span class="customer-initial">${esc(item.name.charAt(0).toUpperCase())}</span><div><b>${esc(item.name)}</b><small>${item.messages} records</small></div><i style="width:${percent}%"></i><footer><span>PLAY<strong>${money(item.play)}</strong></span><span>WIN<strong>${money(item.win)}</strong></span></footer></button>`;
+}
 function resizeTransactionMessages() { document.querySelectorAll('[data-transaction="message"]').forEach(area => { area.style.height = 'auto'; area.style.height = `${Math.min(Math.max(area.scrollHeight, 98), 190)}px`; }); }
 function renderTransactions() {
   const market = $('#transactionMarket')?.value || '';
   const state = $('#transactionState')?.value || '';
   const filtered = loadedTransactions.filter(row => (!state || transactionState(row) === state));
+  const selectedCustomer = Boolean($('#transactionContact')?.value);
+  if (!selectedCustomer) {
+    const customers = transactionCustomerCards(filtered);
+    $('#transactionCount').textContent = String(customers.length);
+    $('#transactionPlay').textContent = money(filtered.reduce((total, row) => total + Number(row.total || 0), 0));
+    $('#transactionWin').textContent = money(filtered.reduce((total, row) => total + Number(row.win || 0), 0));
+    $('#transactionMarketSummary').innerHTML = customers.map(oldCustomerCard).join('') || '<div class="empty-data">No customer record for this date.</div>';
+    $('#transactionList').innerHTML = '';
+    return;
+  }
   const rows = filtered.filter(row => (!market || transactionBase(row.market) === market));
   const markets = transactionMarketCards(filtered);
   $('#transactionCount').textContent = String(markets.length);
@@ -329,7 +352,7 @@ $('#refreshTransactions').addEventListener('click',loadTransactions);
 $('#transactionContact').addEventListener('change',loadTransactions);
 $('#transactionDate').addEventListener('change',loadTransactions);
 ['#transactionMarket','#transactionState'].forEach(id => $(id)?.addEventListener('change',renderTransactions));
-$('#transactionMarketSummary').addEventListener('click',event=>{const card=event.target.closest('[data-transaction-market]');if(card){const select=$('#transactionMarket');select.value=select.value===card.dataset.transactionMarket?'':card.dataset.transactionMarket;renderTransactions();}});
+$('#transactionMarketSummary').addEventListener('click',event=>{const customer=event.target.closest('[data-transaction-contact]');if(customer){const select=$('#transactionContact');select.value=customer.dataset.transactionContact;$('#transactionMarket').value='';loadTransactions();return;}const card=event.target.closest('[data-transaction-market]');if(card){const select=$('#transactionMarket');select.value=select.value===card.dataset.transactionMarket?'':card.dataset.transactionMarket;renderTransactions();}});
 $('#transactionList').addEventListener('click',event=>{const button=event.target.closest('[data-action="save-transaction"]');if(button)saveTransaction(button.closest('.transaction-row'));});
 window.cobo.onLog(log);window.cobo.onStatus(setService);
 (async()=>{const date=todayBusinessDate();$('#resultDate').value=date;$('#transactionDate').value=date;const state=await window.cobo.state();render(state.summary);setService(state);})();

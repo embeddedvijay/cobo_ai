@@ -176,7 +176,11 @@ async function sendOutbox(runtime, item) {
   const configuredInputTarget = [...runtime.input.entries()]
     .find(([, name]) => normalise(name).toLowerCase() === normalise(item.target).toLowerCase())?.[0];
   const target = runtime.output.get(normalise(item.target)) || configuredInputTarget || (isJid(item.target) ? item.target : null);
-  if (!target) throw new Error(`Unknown WhatsApp group target: ${item.target}`);
+  if (!target) {
+    const error = new Error(`Unknown WhatsApp group target: ${item.target}`);
+    error.invalidTarget = true;
+    throw error;
+  }
   const options = item.quote ? { quoted: item.quote } : undefined;
   const sent = await runtime.socket.sendMessage(target, { text: item.text }, options);
   return { sent, target };
@@ -204,7 +208,10 @@ async function flushOutbox(runtime) {
         log.info({ id: item._id, target: item.target, priority: item.priority }, 'Outbox sent');
       } catch (error) {
         const detail = error?.message || String(error);
-        if (whatsappAccepted) {
+        if (error?.invalidTarget) {
+          await http.post(`/outbox/${item._id}/invalid-target?error=${encodeURIComponent(detail)}`).catch(() => undefined);
+          log.error({ id: item._id, target: item.target, detail }, 'Outbox stopped: output group is not configured');
+        } else if (whatsappAccepted) {
           // Do not set retry here. WhatsApp may already have accepted the
           // message while /delivery was unavailable. Backend restart changes
           // it to explicit `uncertain`, never a duplicate automatic send.

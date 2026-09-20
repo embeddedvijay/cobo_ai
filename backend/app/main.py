@@ -325,6 +325,10 @@ def desktop_transactions(
     """Daily customer history; each row represents one parsed input message."""
     collection = desktop_collection(date)
     result_doc = collection.find_one({"Result": True}) or {}
+    try:
+        rates = settlement_service._rates(client_name, "_runtime")
+    except Exception:
+        rates = {"ank": 9.5, "jodi": 95, "single_panna": 150, "double_panna": 300, "triple_panna": 600}
     base_query = {"Total": {"$exists": True}, "Deleted": {"$ne": True}}
     if client_name:
         base_query["Client"] = client_name
@@ -351,6 +355,7 @@ def desktop_transactions(
             "time": str(row.get("Time", "")),
             "message": str(row.get("Message", "")),
             "total": int(row.get("Total", 0) or 0),
+            "win": _dashboard_win(row, result_doc, rates),
             "action": str(row.get("Action", "")),
             "settled": bool(row.get("Settled", False)),
             "result_ready": result_ready,

@@ -276,6 +276,12 @@ ipcMain.handle('desktop:output-groups', () => {
   const { config } = loadConfig(state.configPath);
   return desktopApi(`/desktop/output-groups?client_name=${encodeURIComponent(config.client_name || '')}&session_name=_runtime`);
 });
+ipcMain.handle('desktop:resolve-output-group', (_event, name) => {
+  if (!botProcess) return { status: 'unavailable' };
+  const state = ensureWorkspaceConfig();
+  const { config } = loadConfig(state.configPath);
+  return desktopApi(`/desktop/resolve-output-group?name=${encodeURIComponent(String(name || ''))}&client_name=${encodeURIComponent(config.client_name || '')}&session_name=_runtime`);
+});
 ipcMain.handle('desktop:group-mappings', () => {
   if (!botProcess) return { mappings: [] };
   const state = ensureWorkspaceConfig();

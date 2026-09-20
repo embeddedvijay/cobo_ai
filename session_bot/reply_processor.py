@@ -245,6 +245,7 @@ class Reply_processor(dynamic_time_manager):
                                     self.forward_valid_play(contact, market, text)
                                 if self.is_instant_cutting(contact):
                                     self.send_instant_table(contact, market, result_list)
+                                self.send_category_overflow(contact, market, result_list)
                             return msg,1
                         
                         else:
@@ -281,6 +282,7 @@ class Reply_processor(dynamic_time_manager):
                         self.forward_valid_play(contact, market, text)
                     if instant:
                         self.send_instant_table(contact, market, result_list)
+                    self.send_category_overflow(contact, market, result_list)
                     return msg,0
                 
                 elif(action == "✅🔴"):

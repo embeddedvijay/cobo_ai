@@ -240,10 +240,10 @@ ipcMain.handle('desktop:results', (_event, date) => {
   const { config } = loadConfig(state.configPath);
   return desktopApi(`/desktop/results?date=${encodeURIComponent(date)}&client_name=${encodeURIComponent(config.client_name || '')}&session_name=_runtime`);
 });
-ipcMain.handle('desktop:dashboard', (_event, { date, market = '' }) => {
+ipcMain.handle('desktop:dashboard', (_event, { date, market = '', contact = '' }) => {
   const state = ensureWorkspaceConfig();
   const { config } = loadConfig(state.configPath);
-  return desktopApi(`/desktop/dashboard?date=${encodeURIComponent(date)}&client_name=${encodeURIComponent(config.client_name || '')}&session_name=_runtime&market=${encodeURIComponent(market)}`);
+  return desktopApi(`/desktop/dashboard?date=${encodeURIComponent(date)}&client_name=${encodeURIComponent(config.client_name || '')}&session_name=_runtime&market=${encodeURIComponent(market)}&contact=${encodeURIComponent(contact)}`);
 });
 ipcMain.handle('desktop:save-result', (_event, payload) => desktopApi('/desktop/results', { method: 'PUT', body: JSON.stringify(payload) }));
 ipcMain.handle('desktop:transactions', (_event, { date, contact = '' }) => {

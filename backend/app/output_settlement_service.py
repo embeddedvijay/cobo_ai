@@ -96,13 +96,17 @@ class OutputSettlementService:
 
     @staticmethod
     def _played_stakes(transaction: dict) -> list[tuple[str, int]]:
-        """Classify every accepted input row by its played category, not win."""
+        """Classify every accepted input row by its played category, not win.
+
+        A valid CANCEL stores the same rows with negative stakes. Keeping those
+        negative values here makes ANK/JODI/SP/DP/TP agree with TOTAL PLAY.
+        """
         played = []
         for row in transaction.get("Result", []) or []:
             if not isinstance(row, (list, tuple)) or len(row) < 2:
                 continue
             stake = _amount(row[-1])
-            if stake <= 0:
+            if stake == 0:
                 continue
             numbers = [str(value).strip() for value in row[:-1] if str(value).strip().isdigit()]
             if not numbers:
@@ -278,6 +282,44 @@ class OutputSettlementService:
                 })
             counts["input_group_totals_queued"] += 1
         return counts
+
+    def queue_input_group_revision(self, client_name: str, session_name: str, source_jid: str, business_date: str, revision_id: str) -> bool:
+        """Send the ordinary input-group final again after an operator reject.
+
+        The customer sees the same date-wise total and message-wise play
+        format as Run Final; revision bookkeeping remains backend-only.
+        """
+        processing = find_session(client_name, session_name)["session"].get("processing", {})
+        icons = {**DEFAULT_ICONS, **(processing.get("settlement_icons", {}) or {})}
+        totals = {name: 0 for name in ("ank", "sp", "dp", "tp", "jodi")}
+        message_totals, total_play = [], 0
+        for raw in db.input_group_rows(client_name, session_name, source_jid, business_date):
+            transaction = db.legacy_transaction(raw)
+            if not transaction or transaction.get("Deleted") is True:
+                continue
+            if not self._market_parts(str(transaction.get("Market", "")))[0]:
+                continue
+            message_total = _amount(transaction.get("Total"))
+            message_totals.append(message_total)
+            total_play += message_total
+            for category, stake in self._played_stakes(transaction):
+                totals[category] += stake
+        key = f"input-revision:{source_jid}:{business_date}:{revision_id}"
+        db.enqueue({
+            "client_name": client_name, "session_name": session_name,
+            "channel": "whatsapp", "target": source_jid,
+            "text": self._input_group_total(business_date, totals, total_play, icons),
+            "quote": None, "kind": "settlement_input_group_total",
+            "dedupe_key": key + ":total", "priority": 60, "business_date": business_date,
+        })
+        db.enqueue({
+            "client_name": client_name, "session_name": session_name,
+            "channel": "whatsapp", "target": source_jid,
+            "text": self._input_group_message_play(business_date, message_totals, total_play),
+            "quote": None, "kind": "settlement_input_group_message_play",
+            "dedupe_key": key + ":messages", "priority": 59, "business_date": business_date,
+        })
+        return True
 
     def queue_group(self, client_name: str, session_name: str, output_jid: str, trigger_message_id: str, limit: int = 1000) -> dict:
         processing = find_session(client_name, session_name)["session"].get("processing", {})

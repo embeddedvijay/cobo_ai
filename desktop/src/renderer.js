@@ -11,6 +11,7 @@ let dashboardMarket = '';
 let dashboardContact = '';
 let dashboardLoading = false;
 let finalOptionsLoaded = false;
+let availableOutputGroups = [];
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -44,22 +45,40 @@ function daysFor(key, row) {
   return Array.isArray(saved) ? saved.map(Number) : Array.from({ length: Number(row?.[1] || 0) }, (_, index) => index);
 }
 function destinationNames(kind, current = '') {
-  const values = new Set(current ? [current] : []);
+  const values = new Set(availableOutputGroups);
+  const usable = value => value && !['forward', 'table', 'select table group', 'select forward group'].includes(String(value).trim().toLowerCase());
+  if (usable(current) && (availableOutputGroups.includes(current) || String(current).endsWith('@g.us'))) values.add(current);
   contacts().forEach(([, group]) => {
     const director = group.Director || {};
     const field = kind === 'table' ? 'all_table' : 'all_fast_forward';
-    if (director[field]) values.add(String(director[field]));
+    if (usable(director[field]) && availableOutputGroups.includes(String(director[field]))) values.add(String(director[field]));
     Object.values(director.market_overrides || {}).forEach(route => {
-      if (route?.[kind]) values.add(String(route[kind]));
+      if (usable(route?.[kind]) && availableOutputGroups.includes(String(route[kind]))) values.add(String(route[kind]));
     });
   });
   return [...values].sort((a, b) => a.localeCompare(b));
 }
-function destinationSelect(kind, current, attribute) {
+function destinationOptions(kind, current = '') {
   const label = kind === 'table' ? 'Select table group' : 'Select forward group';
+  const selected = destinationNames(kind, current).includes(current) ? current : '';
   const options = destinationNames(kind, current)
-    .map(value => `<option value="${esc(value)}" ${value === current ? 'selected' : ''}>${esc(value)}</option>`).join('');
-  return `<select ${attribute}><option value="" ${current ? '' : 'selected'}>${label}</option>${options}</select>`;
+    .map(value => `<option value="${esc(value)}" ${value === selected ? 'selected' : ''}>${esc(value)}</option>`).join('');
+  return `<option value="" ${selected ? '' : 'selected'}>${label}</option>${options}`;
+}
+function destinationSelect(kind, current, attribute) {
+  return `<select ${attribute}>${destinationOptions(kind, current)}</select>`;
+}
+function prepareGroupDialog() {
+  $('#groupAllTable').innerHTML = destinationOptions('table');
+  $('#groupAllForward').innerHTML = destinationOptions('fast_forward');
+}
+async function loadOutputGroups() {
+  if (!window.cobo.outputGroups) return;
+  try {
+    const data = await window.cobo.outputGroups();
+    availableOutputGroups = [...new Set(data.groups || [])];
+    renderGroups();
+  } catch (_) { availableOutputGroups = []; renderGroups(); }
 }
 
 const money = value => `₹${Number(value || 0).toLocaleString('en-IN')}`;
@@ -196,7 +215,7 @@ function renderGroups() {
     const overrides = director.market_overrides || {};
     return `<article class="group-card" data-group="${esc(name)}">
       <div class="group-head"><div><small>CUSTOMER GROUP</small><input class="group-name" value="${esc(name)}"></div><div class="active-group">● Active</div><button class="secondary group-save" data-action="save-group">Save Changes</button><button class="icon danger" data-action="delete-group">⌫</button></div>
-      <div class="customer-fields"><label>LD %<input data-field="LD" type="text" inputmode="decimal" value="${esc(group.LD ?? 100)}"></label><label>Limit (₹)<input data-field="Limit" type="text" inputmode="numeric" value="${esc(group.Limit ?? 0)}"></label><label class="cutting-label">⚡ Instant Cutting<input data-field="instant_cutting" type="checkbox" ${group.instant_cutting ? 'checked' : ''}></label><label>All Table<input data-director="all_table" value="${esc(director.all_table || '')}" placeholder="Group name"></label><label>All Forward<input data-director="all_fast_forward" value="${esc(director.all_fast_forward || '')}" placeholder="Group name"></label></div>
+      <div class="customer-fields"><label>LD %<input data-field="LD" type="text" inputmode="decimal" value="${esc(group.LD ?? 100)}"></label><label>Limit (₹)<input data-field="Limit" type="text" inputmode="numeric" value="${esc(group.Limit ?? 0)}"></label><label class="cutting-label">⚡ Instant Cutting<input data-field="instant_cutting" type="checkbox" ${group.instant_cutting ? 'checked' : ''}></label><label>All Table${destinationSelect('table', director.all_table || '', 'data-director="all_table"')}</label><label>All Forward${destinationSelect('fast_forward', director.all_fast_forward || '', 'data-director="all_fast_forward"')}</label></div>
       <div class="group-lower"><div class="override-box"><div class="mini-title">⌄ Market-wise destinations <button data-action="add-override">＋ Add</button></div>${Object.entries(overrides).map(([market,route])=>`<div class="override-row" data-market="${esc(market)}"><b>${esc(market)}</b>${destinationSelect('table', route.table || '', 'data-route="table"')}${destinationSelect('fast_forward', route.fast_forward || '', 'data-route="fast_forward"')}<button class="icon danger" data-action="delete-override">−</button></div>`).join('') || '<p class="muted">All markets use default destinations.</p>'}</div>
       <div class="rates-box"><div class="mini-title">Win Rate</div><div class="rate-grid">${['ANK','Jodi','SP','DP','TP','FS','HS','Commission'].map(key=>`<label>${key}<input data-rate="${key}" type="text" inputmode="decimal" value="${esc(group.win_rate?.[key] ?? '')}"></label>`).join('')}</div></div></div>
     </article>`;
@@ -367,14 +386,14 @@ $('#marketEditor').addEventListener('click',event=>{
   if(event.target.dataset.action!=='save-market')return;const edit=$('#marketEditor');const val=k=>Number(edit.querySelector('[data-edit="'+k+'"]').value||0);mutate(next=>{const row=next.fixed_market_time[selectedMarketKey];const days=[...selectedMarketDays].sort((a,b)=>a-b);next.market_days ||= {};next.market_days[selectedMarketKey]=days;row[1]=days.length;row[0]={hour:val('startHour'),minute:val('startMinute'),second:0};row[2]={hour:val('endHour'),minute:val('endMinute'),second:0};});
 });
 ['#groupManager','#groupManagerSecondary'].forEach(id=>{const node=$(id);if(node){node.addEventListener('change',groupChange);node.addEventListener('click',groupClick);}});
-['#addGroup','#addGroupSecondary'].forEach(id=>{const node=$(id);if(node)node.addEventListener('click',()=>$('#groupDialog').showModal());});
+['#addGroup','#addGroupSecondary'].forEach(id=>{const node=$(id);if(node)node.addEventListener('click',()=>{prepareGroupDialog();$('#groupDialog').showModal();});});
 $('#addMarket').addEventListener('click',()=>$('#marketDialog').showModal());
 document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$('#'+button.dataset.close).close()));
 $('#groupForm').addEventListener('submit',event=>{event.preventDefault();const d=new FormData(event.currentTarget);const name=String(d.get('name')).trim();if(!name)return;mutate(next=>{next.in_contacts ||= {};next.in_contacts[name]={LD:Number(d.get('ld')||100),Limit:Number(d.get('limit')||0),instant_cutting:d.get('instant')==='on',Director:{all_table:String(d.get('allTable')||'').trim(),all_fast_forward:String(d.get('allForward')||'').trim(),market_overrides:{}},win_rate:{ANK:Number(d.get('ank')||0),Jodi:Number(d.get('jodi')||0),SP:Number(d.get('sp')||0),DP:Number(d.get('dp')||0),TP:Number(d.get('tp')||0),FS:Number(d.get('fs')||0),HS:Number(d.get('hs')||0),Commission:Number(d.get('commission')||0)}};});event.currentTarget.reset();$('#groupDialog').close();});
 $('#overrideForm').addEventListener('submit',event=>{event.preventDefault();const d=new FormData(event.currentTarget);const market=String(d.get('market')).trim();if(!market||!overrideTargetGroup)return;mutate(next=>{const group=next.in_contacts[overrideTargetGroup];group.Director ||= {};group.Director.market_overrides ||= {};group.Director.market_overrides[market]={table:String(d.get('table')||'').trim(),fast_forward:String(d.get('forward')||'').trim()};});event.currentTarget.reset();$('#overrideDialog').close();overrideTargetGroup='';});
 $('#marketForm').addEventListener('submit',event=>{event.preventDefault();const d=new FormData(event.currentTarget);const name=String(d.get('name')).trim();if(!name)return;mutate(next=>{next.fixed_market_time ||= {};next.fixed_market_time[name]=[{hour:Number(d.get('startHour')||0),minute:Number(d.get('startMinute')||0),second:0},Number(d.get('days')||0),{hour:Number(d.get('endHour')||0),minute:Number(d.get('endMinute')||0),second:0}];selectedMarketKey=name;});event.currentTarget.reset();$('#marketDialog').close();});
 async function chooseWorkspace(){try{const state=await window.cobo.chooseBotDirectory();log(state.botDirectory?'Project folder: '+state.botDirectory:'Project folder unchanged.');}catch(error){alert(error.message);}}
-async function startService(){try{await window.cobo.startBot();log('Service started.');}catch(error){alert(error.message);}}
+async function startService(){try{await window.cobo.startBot();log('Service started.');setTimeout(loadOutputGroups,1200);}catch(error){alert(error.message);}}
 $('#chooseBot').addEventListener('click',chooseWorkspace);$('#launchService').addEventListener('click',startService);$('#stopBot').addEventListener('click',()=>window.cobo.stopBot());
 $('#dashboardStart').addEventListener('click',startService);
 $('#refreshDashboard').addEventListener('click',loadDashboard);
@@ -394,4 +413,4 @@ $('#transactionDate').addEventListener('change',loadTransactions);
 $('#transactionMarketSummary').addEventListener('click',event=>{const customer=event.target.closest('[data-transaction-contact]');if(customer){const select=$('#transactionContact');select.value=customer.dataset.transactionContact;$('#transactionMarket').value='';loadTransactions();return;}const card=event.target.closest('[data-transaction-market]');if(card){const select=$('#transactionMarket');select.value=select.value===card.dataset.transactionMarket?'':card.dataset.transactionMarket;renderTransactions();}});
 $('#transactionList').addEventListener('click',event=>{const button=event.target.closest('[data-action="save-transaction"]');if(button)saveTransaction(button.closest('.transaction-row'));});
 window.cobo.onLog(log);window.cobo.onStatus(setService);
-(async()=>{const date=todayBusinessDate();$('#resultDate').value=date;$('#transactionDate').value=date;const state=await window.cobo.state();render(state.summary);setService(state);})();
+(async()=>{const date=todayBusinessDate();$('#resultDate').value=date;$('#transactionDate').value=date;const state=await window.cobo.state();render(state.summary);setService(state);loadOutputGroups();})();

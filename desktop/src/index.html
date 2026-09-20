@@ -33,10 +33,23 @@
       <section id="results" class="page results-page"><header><div><p class="eyebrow">RESULTS &amp; MARKETS</p><h1>Results board</h1><p class="subtitle">Select a date to view, edit and save all configured market results.</p></div><div class="page-actions"><label class="date-field">Result date<input id="resultDate" type="text" inputmode="numeric" placeholder="YY-MM-DD"></label><button class="secondary" id="refreshResults">↻ Refresh</button></div></header><div id="resultStatus" class="data-status">Choose a date to load market results.</div><div id="resultCards" class="results-grid"></div></section>
       <section id="transactions" class="page transactions-page"><header class="transactions-header"><p class="eyebrow">TRANSACTIONS</p><div class="page-actions"><button class="secondary transaction-back" id="transactionBack" hidden>← Customers</button><label class="date-field">Date<input id="transactionDate" type="text" inputmode="numeric" placeholder="YY-MM-DD"></label><label class="select-field">Customer<select id="transactionContact"><option value="">All customers</option></select></label><label class="select-field">Market<select id="transactionMarket"><option value="">All markets</option></select></label><label class="select-field">Settlement<select id="transactionState"><option value="">All records</option><option value="pending">Pending</option><option value="ready">Result Ready</option><option value="settled">Settled</option></select></label><button class="secondary" id="refreshTransactions">↻ Refresh</button></div></header><div class="transaction-summary"><div><small>Markets</small><strong id="transactionCount">0</strong></div><div><small>Total play</small><strong id="transactionPlay">₹0</strong></div><div><small>Total win</small><strong id="transactionWin">₹0</strong></div></div><div id="transactionStatus" class="data-status">Choose a date to load old records.</div><div id="transactionMarketSummary" class="transaction-market-summary"></div><div id="transactionList" class="transaction-list"></div></section>
       <section id="config" class="page active">
+        <div id="configHome" class="config-home">
+          <header class="dashboard-header">
+            <div><p class="eyebrow">WORKSPACE SETTINGS</p><h1>Configuration</h1><p class="subtitle">Input groups, market timings and delivery rules.</p></div>
+            <div class="dashboard-actions"><button class="primary" data-open-config>Manage settings</button></div>
+          </header>
+          <div id="configOverviewMetrics" class="metric-grid crm-metrics"></div>
+          <div class="crm-grid">
+            <article class="panel"><div class="panel-title"><div><p class="eyebrow">CUSTOMERS</p><h3>Input group control</h3></div><span id="configOverviewGroupCount">0 active</span></div><div id="configOverviewGroups"></div><button class="quiet-action" data-open-config data-open-tab="groups">Open customer rules →</button></article>
+            <article class="panel"><div class="panel-title"><div><p class="eyebrow">MARKETS</p><h3>Today's timing board</h3></div><span id="configOverviewMarketCount">0 timings</span></div><div id="configOverviewMarkets"></div><button class="quiet-action" data-open-config data-open-tab="timings">Manage market timings →</button></article>
+            <article class="panel crm-activity"><div class="panel-title"><div><p class="eyebrow">ACTIVITY</p><h3>Workspace activity</h3></div></div><pre>Workspace is ready. Choose Manage settings to update customer rules or market timings.</pre></article>
+          </div>
+        </div>
+        <div id="configDetail" hidden>
         <header class="premium-header">
           <div><p class="eyebrow">WORKSPACE SETTINGS</p><h1>Configuration</h1><p class="subtitle">Manage market timings and customer delivery rules</p></div>
           <div class="header-note">ⓘ Standard market timings are already loaded. Edit and save only if needed.</div>
-          <div class="top-date">● System Online&nbsp;&nbsp; | &nbsp;&nbsp;Today</div>
+          <div class="top-date"><button class="secondary" id="configBack">← Overview</button></div>
         </header>
         <div class="premium-tabs">
           <button class="control-tab active-tab" data-tab="timings">◷ Market Timings</button>
@@ -53,6 +66,7 @@
           </div>
         </section>
         <section class="tab-page" id="groups"><article class="input-rules-panel"><div class="section-head"><div><h2>♟ Input Groups</h2><p>Configure group limits, market-wise delivery and win rates</p></div><button class="primary" id="addGroupSecondary">＋ Add Input Group</button></div><div id="groupManagerSecondary"></div></article></section>
+        </div>
       </section>
     </main>
   </div>

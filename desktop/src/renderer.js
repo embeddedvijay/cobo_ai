@@ -160,7 +160,7 @@ function log(value){const out=$('#logs');out.textContent=(out.textContent+'\n'+v
 function setService(status){$('#botState').textContent=status.running?'Running':'Stopped';$('#botDot').classList.toggle('running',Boolean(status.running));if(status.code!==undefined)log('Service stopped with code '+status.code);}
 
 nav.forEach(button=>button.addEventListener('click',()=>goto(button.dataset.page)));
-document.querySelectorAll('[data-goto]').forEach(button=>button.addEventListener('click',()=>goto(button.dataset.goto)));
+document.querySelectorAll('[data-goto]').forEach(button=>button.addEventListener('click',()=>{goto(button.dataset.goto);if(button.dataset.gotoTab)gotoTab(button.dataset.gotoTab);}));
 tabs.forEach(button=>button.addEventListener('click',()=>gotoTab(button.dataset.tab)));
 document.querySelectorAll('[data-tab-target]').forEach(button=>button.addEventListener('click',()=>gotoTab(button.dataset.tabTarget)));
 $('#marketRows').addEventListener('click',event=>{const item=event.target.closest('[data-market-key]');if(item){selectedMarketKey=item.dataset.marketKey;renderTimingTable();}});

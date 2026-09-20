@@ -180,7 +180,16 @@ async function saveResult(card) {
   try { await window.cobo.saveResult(payload); note.textContent = 'Saved'; } catch (error) { note.textContent = error.message; }
 }
 function transactionRow(row) {
-  return `<article class="transaction-row" data-record-id="${esc(row.id)}"><div class="transaction-meta"><b>${esc(row.market || 'Unknown market')}</b><span>${esc(row.contact)} · ${esc(row.time || '—')}</span></div><textarea data-transaction="message" rows="2">${esc(row.message)}</textarea><input data-transaction="total" type="text" inputmode="numeric" value="${esc(row.total)}"><div class="transaction-state ${row.settled ? 'settled' : ''}">${row.settled ? 'Settled' : 'Pending'}</div><button class="secondary" data-action="save-transaction">Save</button></article>`;
+  return `<article class="transaction-row" data-record-id="${esc(row.id)}"><div class="transaction-meta"><b>${esc(row.market || 'Unknown market')}</b><strong>${esc(row.contact_name || row.contact || 'Unknown group')}</strong><span>${esc(row.time || '—')}</span></div><textarea data-transaction="message" rows="5" aria-label="Message">${esc(row.message)}</textarea><input data-transaction="total" type="text" inputmode="numeric" value="${esc(row.total)}"><div class="transaction-state ${row.settled ? 'settled' : ''}">${row.settled ? 'Settled' : 'Pending'}</div><button class="secondary" data-action="save-transaction">Save</button></article>`;
+}
+function resizeTransactionMessages() { document.querySelectorAll('[data-transaction="message"]').forEach(area => { area.style.height = 'auto'; area.style.height = `${Math.min(Math.max(area.scrollHeight, 98), 190)}px`; }); }
+function renderTransactions() {
+  const customerNeedle = ($('#transactionCustomerSearch')?.value || '').trim().toLowerCase();
+  const marketNeedle = ($('#transactionMarketSearch')?.value || '').trim().toLowerCase();
+  const rows = loadedTransactions.filter(row => (!customerNeedle || String(row.contact_name || row.contact || '').toLowerCase().includes(customerNeedle)) && (!marketNeedle || String(row.market || '').toLowerCase().includes(marketNeedle)));
+  $('#transactionCount').textContent = String(rows.length);
+  $('#transactionPlay').textContent = `₹${rows.reduce((total, row) => total + Number(row.total || 0), 0)}`;
+  $('#transactionList').innerHTML = rows.map(transactionRow).join('') || '<div class="empty-data">No customer messages match this search.</div>'; resizeTransactionMessages();
 }
 async function loadTransactions() {
   const date = $('#transactionDate')?.value?.trim();
@@ -190,10 +199,9 @@ async function loadTransactions() {
   try {
     const data = await window.cobo.transactions({ date, contact }); loadedTransactions = data.transactions;
     const select = $('#transactionContact'); const previous = select.value;
-    select.innerHTML = '<option value="">All customers</option>' + data.contacts.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
-    select.value = data.contacts.includes(previous) ? previous : '';
-    $('#transactionCount').textContent = String(data.transactions.length); $('#transactionPlay').textContent = `₹${data.total_play}`; $('#transactionCustomer').textContent = select.value || 'All customers';
-    $('#transactionList').innerHTML = data.transactions.map(transactionRow).join('') || '<div class="empty-data">No customer messages found for this date.</div>';
+    select.innerHTML = '<option value="">All customers</option>' + data.contacts.map(item => `<option value="${esc(item.value)}">${esc(item.name)}</option>`).join('');
+    select.value = data.contacts.some(item => item.value === previous) ? previous : '';
+    $('#transactionCustomer').textContent = select.selectedOptions[0]?.textContent || 'All customers'; renderTransactions();
     $('#transactionStatus').textContent = `${data.transactions.length} message record${data.transactions.length === 1 ? '' : 's'} loaded for ${date}.`;
   } catch (error) { $('#transactionList').innerHTML = ''; $('#transactionStatus').textContent = error.message; }
 }
@@ -232,6 +240,7 @@ $('#refreshResults').addEventListener('click',loadResults);
 $('#resultCards').addEventListener('click',event=>{const button=event.target.closest('[data-action="save-result"]');if(button)saveResult(button.closest('.result-card'));});
 $('#refreshTransactions').addEventListener('click',loadTransactions);
 $('#transactionContact').addEventListener('change',loadTransactions);
+['#transactionCustomerSearch','#transactionMarketSearch'].forEach(id => $(id)?.addEventListener('input', renderTransactions));
 $('#transactionList').addEventListener('click',event=>{const button=event.target.closest('[data-action="save-transaction"]');if(button)saveTransaction(button.closest('.transaction-row'));});
 window.cobo.onLog(log);window.cobo.onStatus(setService);
 (async()=>{const date=todayBusinessDate();$('#resultDate').value=date;$('#transactionDate').value=date;const state=await window.cobo.state();render(state.summary);setService(state);})();

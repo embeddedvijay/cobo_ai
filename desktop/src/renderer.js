@@ -100,28 +100,50 @@ function renderGroups() {
     const director = group.Director || {};
     const overrides = director.market_overrides || {};
     return `<article class="group-card" data-group="${esc(name)}">
-      <div class="group-head"><div><small>CUSTOMER GROUP</small><input class="group-name" value="${esc(name)}"></div><div class="active-group">● Active</div><button class="icon danger" data-action="delete-group">⌫</button></div>
-      <div class="customer-fields"><label>LD %<input data-field="LD" type="number" min="0" max="100" value="${esc(group.LD ?? 100)}"></label><label>Limit (₹)<input data-field="Limit" type="number" min="0" value="${esc(group.Limit ?? 0)}"></label><label class="cutting-label">⚡ Instant Cutting<input data-field="instant_cutting" type="checkbox" ${group.instant_cutting ? 'checked' : ''}></label><label>All Table<input data-director="all_table" value="${esc(director.all_table || '')}" placeholder="Group name"></label><label>All Forward<input data-director="all_fast_forward" value="${esc(director.all_fast_forward || '')}" placeholder="Group name"></label></div>
+      <div class="group-head"><div><small>CUSTOMER GROUP</small><input class="group-name" value="${esc(name)}"></div><div class="active-group">● Active</div><button class="secondary group-save" data-action="save-group">Save Changes</button><button class="icon danger" data-action="delete-group">⌫</button></div>
+      <div class="customer-fields"><label>LD %<input data-field="LD" type="text" inputmode="decimal" value="${esc(group.LD ?? 100)}"></label><label>Limit (₹)<input data-field="Limit" type="text" inputmode="numeric" value="${esc(group.Limit ?? 0)}"></label><label class="cutting-label">⚡ Instant Cutting<input data-field="instant_cutting" type="checkbox" ${group.instant_cutting ? 'checked' : ''}></label><label>All Table<input data-director="all_table" value="${esc(director.all_table || '')}" placeholder="Group name"></label><label>All Forward<input data-director="all_fast_forward" value="${esc(director.all_fast_forward || '')}" placeholder="Group name"></label></div>
       <div class="group-lower"><div class="override-box"><div class="mini-title">⌄ Market-wise destinations <button data-action="add-override">＋ Add</button></div>${Object.entries(overrides).map(([market,route])=>`<div class="override-row" data-market="${esc(market)}"><b>${esc(market)}</b>${destinationSelect('table', route.table || '', 'data-route="table"')}${destinationSelect('fast_forward', route.fast_forward || '', 'data-route="fast_forward"')}<button class="icon danger" data-action="delete-override">−</button></div>`).join('') || '<p class="muted">All markets use default destinations.</p>'}</div>
-      <div class="rates-box"><div class="mini-title">Win Rate</div><div class="rate-grid">${['ANK','Jodi','SP','DP','TP','FS','HS','Commission'].map(key=>`<label>${key}<input data-rate="${key}" type="number" value="${esc(group.win_rate?.[key] ?? '')}"></label>`).join('')}</div></div></div>
+      <div class="rates-box"><div class="mini-title">Win Rate</div><div class="rate-grid">${['ANK','Jodi','SP','DP','TP','FS','HS','Commission'].map(key=>`<label>${key}<input data-rate="${key}" type="text" inputmode="decimal" value="${esc(group.win_rate?.[key] ?? '')}"></label>`).join('')}</div></div></div>
     </article>`;
   }).join('') || '<div class="empty-groups"><b>No input groups yet</b><span>Use Add Input Group to create the first customer rule.</span></div>';
   ['#groupManager','#groupManagerSecondary'].forEach(id => { const node=$(id); if(node) node.innerHTML=markup; });
 }
 function groupChange(event) {
   const card = event.target.closest('.group-card'); if (!card) return;
-  const name = card.dataset.group; const row = event.target.closest('.override-row');
+  markGroupDirty(card);
+}
+function markGroupDirty(card) {
+  card.classList.add('dirty');
+  const button = card.querySelector('[data-action="save-group"]');
+  if (button) button.textContent = 'Save Changes ●';
+}
+function saveGroup(card) {
+  const oldName = card.dataset.group;
+  const nextName = card.querySelector('.group-name').value.trim();
+  if (!nextName) return;
   mutate(next => {
-    const group = next.in_contacts?.[name]; if (!group) return;
-    if (row && event.target.dataset.route) { group.Director ||= {}; group.Director.market_overrides ||= {}; group.Director.market_overrides[row.dataset.market] ||= {}; group.Director.market_overrides[row.dataset.market][event.target.dataset.route] = event.target.value.trim(); }
-    else if (event.target.classList.contains('group-name')) { const newName=event.target.value.trim(); if(newName && newName!==name){next.in_contacts[newName]=group;delete next.in_contacts[name];} }
-    else if(event.target.dataset.field) group[event.target.dataset.field] = event.target.type === 'checkbox' ? event.target.checked : Number(event.target.value || 0);
-    else if(event.target.dataset.director){group.Director ||= {};group.Director[event.target.dataset.director]=event.target.value.trim();}
-    else if(event.target.dataset.rate){group.win_rate ||= {};group.win_rate[event.target.dataset.rate]=Number(event.target.value || 0);}
+    const group = next.in_contacts?.[oldName]; if (!group) return;
+    if (nextName !== oldName) { next.in_contacts[nextName] = group; delete next.in_contacts[oldName]; }
+    group.LD = Number(card.querySelector('[data-field="LD"]').value || 0);
+    group.Limit = Number(card.querySelector('[data-field="Limit"]').value || 0);
+    group.instant_cutting = card.querySelector('[data-field="instant_cutting"]').checked;
+    group.Director ||= {}; group.Director.market_overrides ||= {};
+    group.Director.all_table = card.querySelector('[data-director="all_table"]').value.trim();
+    group.Director.all_fast_forward = card.querySelector('[data-director="all_fast_forward"]').value.trim();
+    card.querySelectorAll('.override-row').forEach(row => {
+      const market = row.dataset.market;
+      group.Director.market_overrides[market] = {
+        table: row.querySelector('[data-route="table"]').value,
+        fast_forward: row.querySelector('[data-route="fast_forward"]').value
+      };
+    });
+    group.win_rate ||= {};
+    card.querySelectorAll('[data-rate]').forEach(input => { group.win_rate[input.dataset.rate] = Number(input.value || 0); });
   });
 }
 function groupClick(event) {
   const card=event.target.closest('.group-card'); if(!card) return; const name=card.dataset.group;
+  if(event.target.dataset.action==='save-group'){saveGroup(card);return;}
   if(event.target.dataset.action==='delete-group') mutate(next=>delete next.in_contacts[name]);
   if(event.target.dataset.action==='add-override'){overrideTargetGroup=name;prepareOverrideDialog();$('#overrideDialog').showModal();}
   if(event.target.dataset.action==='delete-override'){const row=event.target.closest('.override-row');mutate(next=>delete next.in_contacts[name].Director.market_overrides[row.dataset.market]);}

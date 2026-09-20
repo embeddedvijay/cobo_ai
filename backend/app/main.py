@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from bson import ObjectId
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
+from datetime import datetime
+import re
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -59,6 +61,45 @@ class GroupMappingsSync(BaseModel):
     mappings: list[GroupMapping]
 
 
+class ResultEditorUpdate(BaseModel):
+    date: str
+    market: str
+    open: str = ""
+    open_panna: str = ""
+    close: str = ""
+    close_panna: str = ""
+    open_time: str = ""
+    close_time: str = ""
+
+
+class TransactionEditorUpdate(BaseModel):
+    date: str
+    record_id: str
+    message: str | None = None
+    total: int | None = None
+
+
+def desktop_collection(date: str):
+    """Allow only the legacy Market/YY-MM-DD daily collections."""
+    if not re.fullmatch(r"\d{2}-\d{2}-\d{2}", date or ""):
+        raise HTTPException(status_code=422, detail="Date must be YY-MM-DD")
+    return db.db[date]
+
+
+def desktop_market_names(client_name: str, session_name: str, result_doc: dict) -> list[str]:
+    names = set()
+    try:
+        timings = find_session(client_name, session_name)["session"].get("market_timings", {})
+        for key in timings:
+            names.add(re.sub(r"_(OP|CL)$", "", str(key)))
+    except KeyError:
+        pass
+    for key, value in result_doc.items():
+        if key not in {"_id", "Result"} and isinstance(value, dict):
+            names.add(str(key))
+    return sorted(names)
+
+
 def verify(secret: str | None) -> None:
     expected = bridge_secret()
     if expected and secret != expected:
@@ -98,6 +139,99 @@ def queue_final_replies(client_name: str, session_name: str, source_jid: str | N
 @app.get("/health")
 def health():
     return {"ok": True, "engine": "legacy operations + baileys"}
+
+
+@app.get("/desktop/results")
+def desktop_results(
+    date: str = Query(...),
+    client_name: str = Query(""),
+    session_name: str = Query("_runtime"),
+):
+    """Date-wise market results for the desktop workspace."""
+    collection = desktop_collection(date)
+    result_doc = collection.find_one({"Result": True}) or {"Result": True}
+    markets = []
+    for market in desktop_market_names(client_name, session_name, result_doc):
+        row = result_doc.get(market) or {}
+        markets.append({
+            "market": market,
+            "open": str(row.get("OPEN", "")),
+            "open_panna": str(row.get("OPANAL", row.get("OP_PANAL", ""))),
+            "close": str(row.get("CLOSE", "")),
+            "close_panna": str(row.get("CPANAL", row.get("CL_PANAL", ""))),
+            "open_time": str(row.get("OTIME", "")),
+            "close_time": str(row.get("CTIME", "")),
+        })
+    return {"date": date, "markets": markets}
+
+
+@app.put("/desktop/results")
+def save_desktop_result(payload: ResultEditorUpdate):
+    collection = desktop_collection(payload.date)
+    current = collection.find_one({"Result": True}, {payload.market: 1}) or {}
+    value = dict(current.get(payload.market) or {})
+    value.update({
+        "OPEN": payload.open.strip(),
+        "OPANAL": payload.open_panna.strip(),
+        "CLOSE": payload.close.strip(),
+        "CPANAL": payload.close_panna.strip(),
+        "OTIME": payload.open_time.strip(),
+        "CTIME": payload.close_time.strip(),
+    })
+    collection.update_one({"Result": True}, {"$setOnInsert": {"Result": True}, "$set": {payload.market: value}}, upsert=True)
+    return {"ok": True, "market": payload.market, "date": payload.date}
+
+
+@app.get("/desktop/transactions")
+def desktop_transactions(
+    date: str = Query(...),
+    client_name: str = Query(""),
+    contact: str = Query(""),
+):
+    """Daily customer history; each row represents one parsed input message."""
+    collection = desktop_collection(date)
+    base_query = {"Total": {"$exists": True}}
+    if client_name:
+        base_query["Client"] = client_name
+    contacts = sorted(str(item) for item in collection.distinct("Contact", base_query) if item)
+    query = dict(base_query)
+    if contact:
+        query["Contact"] = contact
+    rows = []
+    for row in collection.find(query).sort([("Time", 1), ("_id", 1)]):
+        rows.append({
+            "id": str(row["_id"]),
+            "client": str(row.get("Client", "")),
+            "contact": str(row.get("Contact", "")),
+            "market": str(row.get("Market", "")),
+            "time": str(row.get("Time", "")),
+            "message": str(row.get("Message", "")),
+            "total": int(row.get("Total", 0) or 0),
+            "action": str(row.get("Action", "")),
+            "settled": bool(row.get("Settled", False)),
+        })
+    return {"date": date, "contacts": contacts, "transactions": rows, "total_play": sum(item["total"] for item in rows)}
+
+
+@app.put("/desktop/transactions")
+def save_desktop_transaction(payload: TransactionEditorUpdate):
+    from bson import ObjectId
+    collection = desktop_collection(payload.date)
+    try:
+        record_id = ObjectId(payload.record_id)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="Invalid transaction record") from exc
+    changes = {}
+    if payload.message is not None:
+        changes["Message"] = payload.message
+    if payload.total is not None:
+        changes["Total"] = int(payload.total)
+    if not changes:
+        return {"ok": True, "changed": False}
+    changed = collection.update_one({"_id": record_id, "Total": {"$exists": True}}, {"$set": changes})
+    if not changed.matched_count:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return {"ok": True, "changed": bool(changed.modified_count)}
 
 
 @app.get("/status/{client_name}/{session_name}")

@@ -114,6 +114,22 @@ function configSummary(filePath) {
   };
 }
 
+function desktopBackendUrl() {
+  const state = ensureWorkspaceConfig();
+  const { config } = loadConfig(state.configPath);
+  return String(config.whatsapp?.backend_url || 'http://127.0.0.1:8015').replace(/\/$/, '');
+}
+
+async function desktopApi(path, options = {}) {
+  const response = await fetch(`${desktopBackendUrl()}${path}`, {
+    headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+    ...options,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || `Database request failed (${response.status})`);
+  return payload;
+}
+
 function createWindow() {
   windowRef = new BrowserWindow({
     width: 1480, height: 920, minWidth: 1080, minHeight: 700,
@@ -154,6 +170,18 @@ ipcMain.handle('config:save', (_event, raw) => {
   fs.writeFileSync(state.configPath, JSON.stringify(parsed, null, 2));
   return configSummary(state.configPath);
 });
+ipcMain.handle('desktop:results', (_event, date) => {
+  const state = ensureWorkspaceConfig();
+  const { config } = loadConfig(state.configPath);
+  return desktopApi(`/desktop/results?date=${encodeURIComponent(date)}&client_name=${encodeURIComponent(config.client_name || '')}&session_name=_runtime`);
+});
+ipcMain.handle('desktop:save-result', (_event, payload) => desktopApi('/desktop/results', { method: 'PUT', body: JSON.stringify(payload) }));
+ipcMain.handle('desktop:transactions', (_event, { date, contact = '' }) => {
+  const state = ensureWorkspaceConfig();
+  const { config } = loadConfig(state.configPath);
+  return desktopApi(`/desktop/transactions?date=${encodeURIComponent(date)}&client_name=${encodeURIComponent(config.client_name || '')}&contact=${encodeURIComponent(contact)}`);
+});
+ipcMain.handle('desktop:save-transaction', (_event, payload) => desktopApi('/desktop/transactions', { method: 'PUT', body: JSON.stringify(payload) }));
 ipcMain.handle('bot:choose-directory', async () => {
   const picked = await dialog.showOpenDialog(windowRef, { properties: ['openDirectory'] });
   if (picked.canceled || !picked.filePaths[0]) return readState();

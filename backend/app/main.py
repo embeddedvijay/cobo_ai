@@ -661,3 +661,10 @@ def outbox_result(message_id: str, sent: bool, error: str = "", x_bridge_secret:
     verify(x_bridge_secret)
     db.outbox_result(message_id, sent, error)
     return {"ok": True}
+
+
+@app.post("/outbox/{message_id}/invalid-target")
+def outbox_invalid_target(message_id: str, error: str = "", x_bridge_secret: str | None = Header(default=None)):
+    verify(x_bridge_secret)
+    db.mark_outbox_invalid_target(message_id, error or "Unknown WhatsApp output group")
+    return {"ok": True}

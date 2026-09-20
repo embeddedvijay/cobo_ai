@@ -70,6 +70,7 @@ function renderDashboardNumbers(values) {
 }
 async function loadDashboard() {
   if (!window.cobo.dashboard) return;
+  if ($('#botState')?.textContent !== 'Running') { $('#customerList').innerHTML = '<div class="empty-data">Start Service to load live Play, Win and messages.</div>'; return; }
   try {
     const data = await window.cobo.dashboard({ date: todayBusinessDate(), market: dashboardMarket });
     dashboardMarket = data.selected_market || '';
@@ -249,7 +250,7 @@ async function saveTransaction(row) {
   catch (error) { button.textContent = 'Save'; $('#transactionStatus').textContent = error.message; }
 }
 function log(value){const out=$('#logs');const clean=String(value).split('\n').map(line=>line.length>420?`${line.slice(0,420)}…`:line).join('\n');out.textContent=(out.textContent+'\n'+clean).trim().slice(-9000);out.scrollTop=out.scrollHeight;}
-function setService(status){$('#botState').textContent=status.running?'Running':'Stopped';$('#botDot').classList.toggle('running',Boolean(status.running));if(status.running&&$('#dashboard')?.classList.contains('active'))setTimeout(loadDashboard,600);if(status.code!==undefined)log('Service stopped with code '+status.code);}
+function setService(status){const state=status.running?'Running':status.starting?'Starting…':'Stopped';$('#botState').textContent=state;$('#botDot').classList.toggle('running',Boolean(status.running));if(status.running&&$('#dashboard')?.classList.contains('active'))setTimeout(loadDashboard,600);if(status.code!==undefined)log('Service stopped with code '+status.code);}
 
 nav.forEach(button=>button.addEventListener('click',()=>goto(button.dataset.page)));
 document.querySelectorAll('[data-goto]').forEach(button=>button.addEventListener('click',()=>{goto(button.dataset.goto);if(button.dataset.gotoTab)gotoTab(button.dataset.gotoTab);}));

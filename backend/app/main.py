@@ -114,6 +114,11 @@ def desktop_collection(date: str):
     return db.db[date]
 
 
+@app.get("/desktop/output-groups")
+def desktop_output_groups(client_name: str = Query(""), session_name: str = Query("_runtime")):
+    return {"groups": db.available_output_groups(client_name, session_name)}
+
+
 def desktop_market_names(client_name: str, session_name: str, result_doc: dict) -> list[str]:
     names = set()
     try:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from difflib import SequenceMatcher
 import uuid
 from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -151,6 +152,7 @@ class Database:
         target = " ".join(str(group_name or "").casefold().split())
         if not target:
             return None
+        candidates: list[tuple[float, str]] = []
         for row in self.group_mappings.find(
             {"client_name": client_name, "session_name": session_name},
             {"group_name": 1, "group_name_key": 1, "jid": 1},
@@ -159,6 +161,15 @@ class Database:
             key = " ".join(str(row.get("group_name_key") or "").casefold().split())
             if target in {name, key} and row.get("jid"):
                 return str(row["jid"])
+            if len(target) >= 5 and name and row.get("jid"):
+                candidates.append((SequenceMatcher(None, target, name).ratio(), str(row["jid"])))
+        # Keep Run Final consistent with the bridge: accept only a strong,
+        # clearly better output-name match. Similar group names remain
+        # unresolved rather than risking delivery to the wrong customer.
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        if candidates and candidates[0][0] >= 0.88:
+            if len(candidates) == 1 or candidates[0][0] - candidates[1][0] >= 0.05:
+                return candidates[0][1]
         return None
 
     def available_output_groups(self, client_name: str, session_name: str) -> list[str]:

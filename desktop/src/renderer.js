@@ -9,6 +9,7 @@ let loadedTransactions = [];
 let dashboardMarket = '';
 let dashboardContact = '';
 let dashboardLoading = false;
+let finalOptionsLoaded = false;
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -79,6 +80,26 @@ function renderDashboardNumbers(values) {
   const rows = Object.entries(values || {});
   return rows.length ? rows.map(([number, amount]) => `<div><span>${esc(number)}</span><b>${money(amount)}</b></div>`).join('') + `<footer>TOTAL <b>${money(rows.reduce((sum, [, amount]) => sum + Number(amount || 0), 0))}</b></footer>` : '<p class="empty-data">No accepted number for this market yet.</p>';
 }
+async function loadFinalOptions() {
+  if (finalOptionsLoaded || !window.cobo.finalOptions) return;
+  const select = $('#finalOutputGroup');
+  try {
+    const data = await window.cobo.finalOptions();
+    select.innerHTML = '<option value="">Select output group</option>' + (data.output_groups || []).map(group => `<option value="${esc(group)}">${esc(group)}</option>`).join('');
+    finalOptionsLoaded = true;
+  } catch (_) { select.innerHTML = '<option value="">Output groups unavailable</option>'; }
+}
+async function runFinalSettlement() {
+  const select = $('#finalOutputGroup'); const output_group = select.value;
+  if (!output_group) { alert('Select output group first.'); return; }
+  if (!window.confirm(`Run final settlement for ${output_group}? Output replies and linked input-group totals will be sent.`)) return;
+  const button = $('#runFinal'); button.disabled = true; button.textContent = 'Queueing…';
+  try {
+    const result = await window.cobo.runFinal({ output_group });
+    alert(`Final queued: ${result.queued || 0} output replies, ${result.input_group_totals_queued || 0} input-group totals.`);
+  } catch (error) { alert(error.message); }
+  finally { button.disabled = false; button.textContent = 'Run Final'; }
+}
 async function loadDashboard() {
   if (!window.cobo.dashboard) return;
   if (dashboardLoading) return;
@@ -98,6 +119,7 @@ async function loadDashboard() {
     select.innerHTML = (data.markets || []).map(row => `<option value="${esc(row.market)}" ${row.market === dashboardMarket ? 'selected' : ''}>${esc(pretty(row.market))}</option>`).join('') || '<option value="">No active market</option>';
     $('#dashboardTableTitle').textContent = dashboardMarket ? pretty(dashboardMarket) : 'Select market';
     $('#dashboardNumbers').innerHTML = marketBreakdown('OPEN', data.breakdown?.OP) + marketBreakdown('CLOSE', data.breakdown?.CL) + '<div class="number-table-title">Number-wise Play</div>' + renderDashboardNumbers(data.number_table);
+    loadFinalOptions();
   } catch (error) { $('#customerList').innerHTML = `<div class="empty-data">${esc(error.message)}</div>`; }
   finally { dashboardLoading = false; }
 }
@@ -274,6 +296,7 @@ function renderTransactions() {
   const state = $('#transactionState')?.value || '';
   const filtered = loadedTransactions.filter(row => (!state || transactionState(row) === state));
   const selectedCustomer = Boolean($('#transactionContact')?.value);
+  $('#transactionBack').hidden = !selectedCustomer;
   if (!selectedCustomer) {
     const customers = transactionCustomerCards(filtered);
     $('#transactionCount').textContent = String(customers.length);
@@ -341,6 +364,7 @@ async function startService(){try{await window.cobo.startBot();log('Service star
 $('#chooseBot').addEventListener('click',chooseWorkspace);$('#launchService').addEventListener('click',startService);$('#stopBot').addEventListener('click',()=>window.cobo.stopBot());
 $('#dashboardStart').addEventListener('click',startService);
 $('#refreshDashboard').addEventListener('click',loadDashboard);
+$('#runFinal').addEventListener('click',runFinalSettlement);
 setInterval(()=>{if($('#dashboard')?.classList.contains('active')&&$('#botState')?.textContent==='Running')loadDashboard();},8000);
 $('#dashboardMarketSelect').addEventListener('change',event=>{dashboardMarket=event.target.value;loadDashboard();});
 $('#metricCards').addEventListener('click',event=>{const card=event.target.closest('[data-dashboard-contact]');if(card){dashboardContact=dashboardContact===card.dataset.dashboardContact?'':card.dataset.dashboardContact;dashboardMarket='';loadDashboard();}});
@@ -350,6 +374,7 @@ $('#refreshResults').addEventListener('click',loadResults);
 $('#resultCards').addEventListener('click',event=>{const button=event.target.closest('[data-action="save-result"]');if(button)saveResult(button.closest('.result-card'));});
 $('#refreshTransactions').addEventListener('click',loadTransactions);
 $('#transactionContact').addEventListener('change',loadTransactions);
+$('#transactionBack').addEventListener('click',()=>{ $('#transactionContact').value=''; $('#transactionMarket').value=''; loadTransactions(); });
 $('#transactionDate').addEventListener('change',loadTransactions);
 ['#transactionMarket','#transactionState'].forEach(id => $(id)?.addEventListener('change',renderTransactions));
 $('#transactionMarketSummary').addEventListener('click',event=>{const customer=event.target.closest('[data-transaction-contact]');if(customer){const select=$('#transactionContact');select.value=customer.dataset.transactionContact;$('#transactionMarket').value='';loadTransactions();return;}const card=event.target.closest('[data-transaction-market]');if(card){const select=$('#transactionMarket');select.value=select.value===card.dataset.transactionMarket?'':card.dataset.transactionMarket;renderTransactions();}});

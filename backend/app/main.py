@@ -155,26 +155,37 @@ def desktop_dashboard(
     markets: dict[str, dict] = {}
     for row in rows:
         market_name = str(row.get("Market", "") or "UNKNOWN")
+        base_market, side = settlement_service._market_parts(market_name)
+        market_name = base_market or market_name
         total = _money_amount(row.get("Total"))
         win = _dashboard_win(row, result_doc, rates)
-        market_row = markets.setdefault(market_name, {"market": market_name, "play": 0, "win": 0, "messages": 0})
+        market_row = markets.setdefault(market_name, {
+            "market": market_name, "play": 0, "win": 0, "messages": 0,
+            "open_play": 0, "open_win": 0, "close_play": 0, "close_win": 0,
+        })
         market_row["play"] += total; market_row["win"] += win; market_row["messages"] += 1
+        if side == "OP":
+            market_row["open_play"] += total; market_row["open_win"] += win
+        elif side == "CL":
+            market_row["close_play"] += total; market_row["close_win"] += win
 
-    selected = market or (next(reversed(markets)) if markets else "")
+    selected_base, _ = settlement_service._market_parts(market)
+    selected = selected_base or market or (next(reversed(markets)) if markets else "")
     number_table: dict[str, int] = {}
     breakdown = {
         "OP": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}},
         "CL": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}},
     }
     for row in rows:
-        if str(row.get("Market", "")) != selected:
+        row_market = str(row.get("Market", ""))
+        base_market, side = settlement_service._market_parts(row_market)
+        if (base_market or row_market) != selected:
             continue
-        _base, side = settlement_service._market_parts(selected)
         if side not in breakdown:
             continue
         total = _money_amount(row.get("Total"))
         breakdown[side]["play"] += total
-        values = settlement_service._result_values(_base, side, result_doc) if _base else None
+        values = settlement_service._result_values(base_market, side, result_doc) if base_market else None
         wins = settlement_service._winning_rows(row, values, rates) if values else []
         breakdown[side]["win"] += _money_amount(sum(item.get("win", 0) for item in wins))
         for winner in wins:

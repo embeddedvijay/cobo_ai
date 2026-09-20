@@ -237,16 +237,36 @@ async function saveResult(card) {
 function transactionState(row) { return row.settled ? 'settled' : row.result_ready ? 'ready' : 'pending'; }
 function transactionRow(row) {
   const state = transactionState(row); const label = state === 'settled' ? 'Settled' : state === 'ready' ? 'Result Ready' : 'Pending';
-  return `<article class="transaction-row" data-record-id="${esc(row.id)}"><div class="transaction-meta"><b>${esc(row.market || 'Unknown market')}</b><strong>${esc(row.contact_name || row.contact || 'Unknown group')}</strong><span>${esc(row.time || '—')}</span></div><textarea data-transaction="message" rows="5" aria-label="Message">${esc(row.message)}</textarea><input data-transaction="total" type="text" inputmode="numeric" value="${esc(row.total)}"><div class="transaction-state ${state}">${label}</div><button class="secondary" data-action="save-transaction">Save</button></article>`;
+  return `<article class="transaction-row" data-record-id="${esc(row.id)}"><div class="transaction-meta"><b>${esc(row.market || 'Unknown market')}</b><strong>${esc(row.contact_name || row.contact || 'Unknown group')}</strong><span>${esc(row.time || '—')} · Play ${money(row.total)} · Win ${money(row.win)}</span></div><textarea data-transaction="message" rows="5" aria-label="Message">${esc(row.message)}</textarea><input data-transaction="total" type="text" inputmode="numeric" value="${esc(row.total)}"><div class="transaction-state ${state}">${label}</div><button class="secondary" data-action="save-transaction">Save</button></article>`;
+}
+function transactionBase(market) { return String(market || '').replace(/_(OP|CL)$/, ''); }
+function transactionMarketCards(rows) {
+  const markets = {};
+  rows.forEach(row => {
+    const base = transactionBase(row.market) || 'UNKNOWN';
+    const item = markets[base] ||= { market: base, play: 0, win: 0, open_play: 0, open_win: 0, close_play: 0, close_win: 0, messages: 0 };
+    const side = String(row.market || '').endsWith('_OP') ? 'open' : String(row.market || '').endsWith('_CL') ? 'close' : '';
+    item.play += Number(row.total || 0); item.win += Number(row.win || 0); item.messages += 1;
+    if (side) { item[`${side}_play`] += Number(row.total || 0); item[`${side}_win`] += Number(row.win || 0); }
+  });
+  return Object.values(markets).sort((a,b) => b.play - a.play);
+}
+function oldMarketCard(item) {
+  const selected = ($('#transactionMarket')?.value || '') === item.market;
+  return `<button class="old-market-card ${selected ? 'selected' : ''}" data-transaction-market="${esc(item.market)}"><b>${esc(pretty(item.market))}</b><div><span>OPEN<br><strong>${money(item.open_play)} / ${money(item.open_win)}</strong></span><span>CLOSE<br><strong>${money(item.close_play)} / ${money(item.close_win)}</strong></span></div><footer>PLAY <strong>${money(item.play)}</strong><em>WIN ${money(item.win)}</em><small>${item.messages} records</small></footer></button>`;
 }
 function resizeTransactionMessages() { document.querySelectorAll('[data-transaction="message"]').forEach(area => { area.style.height = 'auto'; area.style.height = `${Math.min(Math.max(area.scrollHeight, 98), 190)}px`; }); }
 function renderTransactions() {
   const market = $('#transactionMarket')?.value || '';
   const state = $('#transactionState')?.value || '';
-  const rows = loadedTransactions.filter(row => (!market || row.market === market) && (!state || transactionState(row) === state));
-  $('#transactionCount').textContent = String(rows.length);
+  const filtered = loadedTransactions.filter(row => (!state || transactionState(row) === state));
+  const rows = filtered.filter(row => (!market || transactionBase(row.market) === market));
+  const markets = transactionMarketCards(filtered);
+  $('#transactionCount').textContent = String(markets.length);
   $('#transactionPlay').textContent = `₹${rows.reduce((total, row) => total + Number(row.total || 0), 0)}`;
-  $('#transactionList').innerHTML = rows.map(transactionRow).join('') || '<div class="empty-data">No record matches these filters.</div>'; resizeTransactionMessages();
+  $('#transactionWin').textContent = money(rows.reduce((total, row) => total + Number(row.win || 0), 0));
+  $('#transactionMarketSummary').innerHTML = markets.map(oldMarketCard).join('') || '<div class="empty-data">No market record matches these filters.</div>';
+  $('#transactionList').innerHTML = market ? (rows.map(transactionRow).join('') || '<div class="empty-data">No old record for this market.</div>') : ''; resizeTransactionMessages();
 }
 async function loadTransactions() {
   const date = $('#transactionDate')?.value?.trim();
@@ -259,13 +279,10 @@ async function loadTransactions() {
     select.innerHTML = '<option value="">All customers</option>' + data.contacts.map(item => `<option value="${esc(item.value)}">${esc(item.name)}</option>`).join('');
     select.value = data.contacts.some(item => item.value === previous) ? previous : '';
     const marketSelect = $('#transactionMarket'); const previousMarket = marketSelect.value;
-    const markets = [...new Set(data.transactions.map(item => item.market).filter(Boolean))].sort();
+    const markets = [...new Set(data.transactions.map(item => transactionBase(item.market)).filter(Boolean))].sort();
     marketSelect.innerHTML = '<option value="">All markets</option>' + markets.map(item => `<option value="${esc(item)}">${esc(pretty(item))}</option>`).join('');
     marketSelect.value = markets.includes(previousMarket) ? previousMarket : '';
-    const state = $('#transactionState').selectedOptions[0]?.textContent || 'All records';
-    const customer = select.selectedOptions[0]?.textContent || 'All customers';
-    const marketName = marketSelect.selectedOptions[0]?.textContent || 'All markets';
-    $('#transactionCustomer').textContent = `${customer} · ${marketName} · ${state}`; renderTransactions();
+    renderTransactions();
     $('#transactionStatus').textContent = `${data.transactions.length} message record${data.transactions.length === 1 ? '' : 's'} loaded for ${date}.`;
   } catch (error) { $('#transactionList').innerHTML = ''; $('#transactionStatus').textContent = error.message; }
 }
@@ -311,7 +328,8 @@ $('#resultCards').addEventListener('click',event=>{const button=event.target.clo
 $('#refreshTransactions').addEventListener('click',loadTransactions);
 $('#transactionContact').addEventListener('change',loadTransactions);
 $('#transactionDate').addEventListener('change',loadTransactions);
-['#transactionMarket','#transactionState'].forEach(id => $(id)?.addEventListener('change',()=>{const customer=$('#transactionContact').selectedOptions[0]?.textContent||'All customers';const market=$('#transactionMarket').selectedOptions[0]?.textContent||'All markets';const state=$('#transactionState').selectedOptions[0]?.textContent||'All records';$('#transactionCustomer').textContent=`${customer} · ${market} · ${state}`;renderTransactions();}));
+['#transactionMarket','#transactionState'].forEach(id => $(id)?.addEventListener('change',renderTransactions));
+$('#transactionMarketSummary').addEventListener('click',event=>{const card=event.target.closest('[data-transaction-market]');if(card){const select=$('#transactionMarket');select.value=select.value===card.dataset.transactionMarket?'':card.dataset.transactionMarket;renderTransactions();}});
 $('#transactionList').addEventListener('click',event=>{const button=event.target.closest('[data-action="save-transaction"]');if(button)saveTransaction(button.closest('.transaction-row'));});
 window.cobo.onLog(log);window.cobo.onStatus(setService);
 (async()=>{const date=todayBusinessDate();$('#resultDate').value=date;$('#transactionDate').value=date;const state=await window.cobo.state();render(state.summary);setService(state);})();

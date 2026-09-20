@@ -210,7 +210,7 @@ async function saveTransaction(row) {
   try { await window.cobo.saveTransaction({ date: $('#transactionDate').value.trim(), record_id: row.dataset.recordId, message: row.querySelector('[data-transaction="message"]').value, total: Number(row.querySelector('[data-transaction="total"]').value || 0) }); button.textContent = 'Saved'; }
   catch (error) { button.textContent = 'Save'; $('#transactionStatus').textContent = error.message; }
 }
-function log(value){const out=$('#logs');out.textContent=(out.textContent+'\n'+value).trim().slice(-12000);out.scrollTop=out.scrollHeight;}
+function log(value){const out=$('#logs');const clean=String(value).split('\n').map(line=>line.length>420?`${line.slice(0,420)}…`:line).join('\n');out.textContent=(out.textContent+'\n'+clean).trim().slice(-9000);out.scrollTop=out.scrollHeight;}
 function setService(status){$('#botState').textContent=status.running?'Running':'Stopped';$('#botDot').classList.toggle('running',Boolean(status.running));if(status.code!==undefined)log('Service stopped with code '+status.code);}
 
 nav.forEach(button=>button.addEventListener('click',()=>goto(button.dataset.page)));

@@ -183,7 +183,15 @@ async function sendOutbox(runtime, item) {
   const outputRequired = Boolean(item.market || item.settlement_payload);
   const configuredInputTarget = [...runtime.input.entries()]
     .find(([, name]) => normalise(name).toLowerCase() === normalise(item.target).toLowerCase())?.[0];
-  const target = runtime.output.get(normalise(item.target)) || (!outputRequired ? configuredInputTarget : null) || (isJid(item.target) ? item.target : null);
+  let target = runtime.output.get(normalise(item.target)) || (!outputRequired ? configuredInputTarget : null) || (isJid(item.target) ? item.target : null);
+  let fallback = false;
+  // Old legacy files often contain a symbolic route such as ALL_MARKET while
+  // the desktop has successfully resolved exactly one real output group. Use
+  // that sole output for play/table traffic rather than dropping a valid play.
+  if (!target && outputRequired && runtime.output.size === 1) {
+    target = [...runtime.output.values()][0];
+    fallback = true;
+  }
   if (!target) {
     const error = new Error(`Unknown WhatsApp group target: ${item.target}`);
     error.invalidTarget = true;
@@ -191,7 +199,7 @@ async function sendOutbox(runtime, item) {
   }
   const options = item.quote ? { quoted: item.quote } : undefined;
   const sent = await runtime.socket.sendMessage(target, { text: item.text }, options);
-  return { sent, target, targetName: runtime.groupNames?.get(target) || item.target || target };
+  return { sent, target, targetName: runtime.groupNames?.get(target) || item.target || target, fallback };
 }
 
 async function flushOutbox(runtime) {
@@ -210,6 +218,7 @@ async function flushOutbox(runtime) {
         // table after a failed /delivery callback.
         await http.post(`/outbox/${item._id}/attempt`);
         const delivery = await sendOutbox(runtime, item);
+        if (delivery.fallback) log.warn({ configured_target: item.target, target: delivery.targetName, target_jid: delivery.target }, 'Legacy output route replaced by sole resolved output group');
         whatsappAccepted = true;
         await http.post(`/outbox/${item._id}/delivery`, { target_jid: delivery.target, sent_message: delivery.sent });
         await http.post(`/outbox/${item._id}/result?sent=true`);

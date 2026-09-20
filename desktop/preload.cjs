@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('cobo', {
   state: () => ipcRenderer.invoke('app:state'),
   loadConfig: () => ipcRenderer.invoke('config:load'),
   saveConfig: raw => ipcRenderer.invoke('config:save', raw),
+  dashboard: payload => ipcRenderer.invoke('desktop:dashboard', payload),
   results: date => ipcRenderer.invoke('desktop:results', date),
   saveResult: payload => ipcRenderer.invoke('desktop:save-result', payload),
   transactions: payload => ipcRenderer.invoke('desktop:transactions', payload),

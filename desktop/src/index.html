@@ -58,7 +58,7 @@
         <section class="tab-page active" id="timings">
           <div class="premium-config-grid">
             <article class="timings-panel">
-              <div class="section-head"><div><h2>◷ Market Timings</h2><p>Define market open/close timings and active days</p></div><div class="market-actions"><button class="search-button">⌕&nbsp; Search markets...</button><button class="primary small" id="addMarket">＋ Add Market</button></div></div>
+              <div class="section-head"><div><h2>◷ Market Timings</h2><p>Define market open/close timings and active days</p></div><div class="market-actions"><select id="marketSearch" class="search-button" aria-label="Select market"><option value="">All markets</option></select><button class="primary small" id="addMarket">＋ Add Market</button></div></div>
               <div class="timing-table-head"><span>Market</span><span>Phase</span><span>Start Time</span><span>End Time</span><span>Active Days</span><span>Status</span><span>Actions</span></div>
               <div id="marketRows" class="timing-table-body"></div>
             </article>
@@ -77,7 +77,7 @@
       <div class="dialog-head"><div><p class="eyebrow">NEW INPUT GROUP</p><h2>Add customer group</h2></div><button type="button" class="icon" data-close="groupDialog">×</button></div>
       <label>Customer group name<input name="name" required placeholder="Exact group name"></label>
       <div class="field-grid"><label>LD %<input name="ld" type="number" min="0" max="100" value="100" required></label><label>Limit (₹)<input name="limit" type="number" min="0" value="0" required></label><label class="toggle-field">Instant Cutting<input name="instant" type="checkbox"></label></div>
-      <fieldset><legend>Default destinations</legend><div class="field-grid two"><label>All Table<select id="groupAllTable" name="allTable"></select></label><label>All Forward<select id="groupAllForward" name="allForward"></select></label></div></fieldset>
+      <fieldset><legend>Default destinations</legend><div class="field-grid two"><label>All Table<input id="groupAllTable" name="allTable" list="outputGroupNames" placeholder="Select or type group / @g.us JID"></label><label>All Forward<input id="groupAllForward" name="allForward" list="outputGroupNames" placeholder="Select or type group / @g.us JID"></label></div></fieldset>
       <fieldset><legend>Win Rate</legend><div class="rate-grid"><label>ANK<input name="ank" type="number" value="9.5"></label><label>Jodi<input name="jodi" type="number" value="95"></label><label>SP<input name="sp" type="number" value="150"></label><label>DP<input name="dp" type="number" value="300"></label><label>TP<input name="tp" type="number" value="600"></label><label>FS<input name="fs" type="number" value="10000"></label><label>HS<input name="hs" type="number" value="1000"></label><label>Commission %<input name="commission" type="number" value="0"></label></div></fieldset>
       <div class="dialog-actions"><button type="button" class="secondary" data-close="groupDialog">Cancel</button><button class="primary" type="submit">Add Input Group</button></div>
     </form>
@@ -87,7 +87,7 @@
     <form id="overrideForm">
       <div class="dialog-head"><div><p class="eyebrow">MARKET-WISE DESTINATION</p><h2>Add destination</h2></div><button type="button" class="icon" data-close="overrideDialog">×</button></div>
       <label>Market name<select id="overrideMarket" name="market" required></select></label>
-      <div class="field-grid two"><label>Table destination<select id="overrideTable" name="table"></select></label><label>Forward destination<select id="overrideForward" name="forward"></select></label></div>
+      <div class="field-grid two"><label>Table destination<input id="overrideTable" name="table" list="outputGroupNames" placeholder="Select or type group / @g.us JID"></label><label>Forward destination<input id="overrideForward" name="forward" list="outputGroupNames" placeholder="Select or type group / @g.us JID"></label></div>
       <div class="dialog-actions"><button type="button" class="secondary" data-close="overrideDialog">Cancel</button><button class="primary" type="submit">Add destination</button></div>
     </form>
   </dialog>

@@ -79,6 +79,8 @@ async function resolveGroups(runtime) {
     return null;
   };
   runtime.input.clear(); runtime.output.clear();
+  runtime.groupNames = new Map();
+  for (const group of Object.values(groups)) runtime.groupNames.set(group.id, group.subject || group.id);
   for (const item of configuredInputs(runtime)) {
     const jid = jidForName(item);
     if (jid) runtime.input.set(jid, isJid(item) ? jid : item);
@@ -86,7 +88,12 @@ async function resolveGroups(runtime) {
   }
   for (const item of configuredOutputs(runtime)) {
     const jid = jidForName(item);
-    if (jid) runtime.output.set(normalise(item), jid);
+    if (jid && runtime.input.has(jid)) {
+      // Never echo an accepted play back into a customer/input group. This is
+      // almost always an accidental route selection and makes delivery look
+      // like it vanished because it appears in the source chat.
+      log.error({ item, jid, input_name: runtime.input.get(jid) }, 'Output group cannot be the same as an input group');
+    } else if (jid) runtime.output.set(normalise(item), jid);
     else log.warn({ item }, 'Configured output group not found');
   }
   const mappings = new Map();
@@ -183,7 +190,7 @@ async function sendOutbox(runtime, item) {
   }
   const options = item.quote ? { quoted: item.quote } : undefined;
   const sent = await runtime.socket.sendMessage(target, { text: item.text }, options);
-  return { sent, target };
+  return { sent, target, targetName: runtime.groupNames?.get(target) || item.target || target };
 }
 
 async function flushOutbox(runtime) {
@@ -205,7 +212,7 @@ async function flushOutbox(runtime) {
         whatsappAccepted = true;
         await http.post(`/outbox/${item._id}/delivery`, { target_jid: delivery.target, sent_message: delivery.sent });
         await http.post(`/outbox/${item._id}/result?sent=true`);
-        log.info({ id: item._id, target: item.target, priority: item.priority }, 'Outbox sent');
+        log.info({ id: item._id, target: delivery.targetName, target_jid: delivery.target, priority: item.priority }, 'Outbox sent');
       } catch (error) {
         const detail = error?.message || String(error);
         if (error?.invalidTarget) {

@@ -7,6 +7,7 @@ let overrideTargetGroup = '';
 let selectedMarketDays = new Set();
 let loadedTransactions = [];
 let dashboardMarket = '';
+let dashboardContact = '';
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -64,6 +65,11 @@ function liveMarketCard(row, index) {
   const colour = ['red','violet','blue','green'][index % 4];
   return `<button class="live-market ${colour} ${row.market === dashboardMarket ? 'selected' : ''}" data-dashboard-market="${esc(row.market)}"><b>${esc(pretty(row.market))}</b><div><span>PLAY <strong>${money(row.play)}</strong></span><span>WIN <strong>${money(row.win)}</strong></span></div><small>${row.messages} messages</small></button>`;
 }
+function marketBreakdown(label, detail) {
+  const info = detail || {};
+  const line = (name, value) => `<span>${name}<b>${money(value?.play)} / ${money(value?.win)}</b></span>`;
+  return `<article class="market-breakdown"><header><b>${label}</b><span>PLAY<strong>${money(info.play)}</strong></span><span>WIN<strong>${money(info.win)}</strong></span></header><div>${line('ANK', info.ank)}${line('PANNA', info.panna)}${line('JODI', info.jodi)}</div></article>`;
+}
 function renderDashboardNumbers(values) {
   const rows = Object.entries(values || {});
   return rows.length ? rows.map(([number, amount]) => `<div><span>${esc(number)}</span><b>${money(amount)}</b></div>`).join('') + `<footer>TOTAL <b>${money(rows.reduce((sum, [, amount]) => sum + Number(amount || 0), 0))}</b></footer>` : '<p class="empty-data">No accepted number for this market yet.</p>';
@@ -72,17 +78,17 @@ async function loadDashboard() {
   if (!window.cobo.dashboard) return;
   if ($('#botState')?.textContent !== 'Running') { $('#customerList').innerHTML = '<div class="empty-data">Start Service to load live Play, Win and messages.</div>'; return; }
   try {
-    const data = await window.cobo.dashboard({ date: todayBusinessDate(), market: dashboardMarket });
+    const data = await window.cobo.dashboard({ date: todayBusinessDate(), market: dashboardMarket, contact: dashboardContact });
     dashboardMarket = data.selected_market || '';
-    $('#metricCards').innerHTML = (data.customers || []).map((row, index) => `<article class="metric live-customer metric-${index % 4}"><small>${esc(row.name)}</small><div class="live-progress"><i style="width:${Math.min(100, Number(row.play || 0) ? 62 : 0)}%"></i></div><div class="live-totals"><span>PLAY <b>${money(row.play)}</b></span><span>WIN <b>${money(row.win)}</b></span></div></article>`).join('') || '<div class="metric"><small>Today Play</small><strong>₹0</strong><span>No accepted message yet</span></div>';
+    $('#metricCards').innerHTML = (data.customers || []).map((row, index) => `<button class="metric live-customer metric-${index % 4} ${row.contact === dashboardContact ? 'selected' : ''}" data-dashboard-contact="${esc(row.contact)}"><small>${esc(row.name)}</small><div class="live-progress"><i style="width:${Math.min(100, Number(row.play || 0) ? 62 : 0)}%"></i></div><div class="live-totals"><span>PLAY <b>${money(row.play)}</b></span><span>WIN <b>${money(row.win)}</b></span></div></button>`).join('') || '<div class="metric"><small>Today Play</small><strong>₹0</strong><span>No accepted message yet</span></div>';
     $('#contactCount').textContent = `${data.customers?.length || 0} groups`;
-    $('#marketCount').textContent = `${data.markets?.length || 0} markets`;
+    $('#marketCount').textContent = `${data.markets?.length || 0} markets${dashboardContact ? ' · selected customer' : ''}`;
     $('#customerList').innerHTML = (data.messages || []).map(liveMessageCard).join('') || '<div class="empty-data">No accepted play yet.</div>';
     $('#marketList').innerHTML = (data.markets || []).map(liveMarketCard).join('') || '<div class="empty-data">No market activity yet.</div>';
     const select = $('#dashboardMarketSelect');
     select.innerHTML = (data.markets || []).map(row => `<option value="${esc(row.market)}" ${row.market === dashboardMarket ? 'selected' : ''}>${esc(pretty(row.market))}</option>`).join('') || '<option value="">No active market</option>';
     $('#dashboardTableTitle').textContent = dashboardMarket ? pretty(dashboardMarket) : 'Select market';
-    $('#dashboardNumbers').innerHTML = renderDashboardNumbers(data.number_table);
+    $('#dashboardNumbers').innerHTML = marketBreakdown('OPEN', data.breakdown?.OP) + marketBreakdown('CLOSE', data.breakdown?.CL) + '<div class="number-table-title">Number-wise Play</div>' + renderDashboardNumbers(data.number_table);
   } catch (error) { $('#customerList').innerHTML = `<div class="empty-data">${esc(error.message)}</div>`; }
 }
 async function rejectLiveMessage(card) {
@@ -277,6 +283,7 @@ $('#chooseBot').addEventListener('click',chooseWorkspace);$('#launchService').ad
 $('#dashboardStart').addEventListener('click',startService);
 $('#refreshDashboard').addEventListener('click',loadDashboard);
 $('#dashboardMarketSelect').addEventListener('change',event=>{dashboardMarket=event.target.value;loadDashboard();});
+$('#metricCards').addEventListener('click',event=>{const card=event.target.closest('[data-dashboard-contact]');if(card){dashboardContact=dashboardContact===card.dataset.dashboardContact?'':card.dataset.dashboardContact;dashboardMarket='';loadDashboard();}});
 $('#marketList').addEventListener('click',event=>{const button=event.target.closest('[data-dashboard-market]');if(button){dashboardMarket=button.dataset.dashboardMarket;loadDashboard();}});
 $('#customerList').addEventListener('click',event=>{const button=event.target.closest('[data-action="reject-live"]');if(button)rejectLiveMessage(button.closest('.live-message'));});
 $('#refreshResults').addEventListener('click',loadResults);

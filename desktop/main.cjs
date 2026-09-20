@@ -55,7 +55,28 @@ function loadConfig(filePath) {
   return { raw, config: normaliseConfig(JSON.parse(raw)) };
 }
 
-function runtimeConfigFromJson(value) {
+function existingAuthDir(projectDirectory, configuredAuthDir = '') {
+  const configured = String(configuredAuthDir || '').trim();
+  const absoluteConfigured = configured
+    ? (path.isAbsolute(configured) ? configured : path.join(projectDirectory, configured))
+    : '';
+  if (absoluteConfigured && fs.existsSync(path.join(absoluteConfigured, 'creds.json'))) return configured;
+
+  const authRoot = path.join(projectDirectory, 'auth_info');
+  const candidates = [];
+  if (fs.existsSync(path.join(authRoot, 'creds.json'))) candidates.push('./auth_info');
+  if (fs.existsSync(authRoot)) {
+    for (const entry of fs.readdirSync(authRoot, { withFileTypes: true })) {
+      if (entry.isDirectory() && fs.existsSync(path.join(authRoot, entry.name, 'creds.json'))) {
+        candidates.push(`./auth_info/${entry.name}`);
+      }
+    }
+  }
+  // A saved QR login is always preferable to creating a new desktop folder.
+  return candidates.sort()[0] || configured || './auth_info/desktop';
+}
+
+function runtimeConfigFromJson(value, projectDirectory) {
   const client = normaliseConfig(value);
   const outputGroups = new Set();
   for (const detail of Object.values(client.in_contacts || {})) {
@@ -71,7 +92,7 @@ function runtimeConfigFromJson(value) {
   const outputs = [...outputGroups];
   return {
     whatsapp: {
-      auth_dir: client.whatsapp?.auth_dir || './auth_info/desktop',
+      auth_dir: existingAuthDir(projectDirectory, client.whatsapp?.auth_dir),
       backend_url: client.whatsapp?.backend_url || 'http://127.0.0.1:8015',
       reconnect_delay_ms: 2500, outbox_poll_ms: 500, max_parallel_jids: 1
     },
@@ -95,10 +116,10 @@ function runtimeConfigFromJson(value) {
   };
 }
 
-function writeRuntimeConfig(configPath) {
+function writeRuntimeConfig(configPath, projectDirectory) {
   const uploaded = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   const runtimePath = path.join(path.dirname(configPath), '.cobo-runtime.json');
-  fs.writeFileSync(runtimePath, JSON.stringify(runtimeConfigFromJson(uploaded), null, 2));
+  fs.writeFileSync(runtimePath, JSON.stringify(runtimeConfigFromJson(uploaded, projectDirectory), null, 2));
   return runtimePath;
 }
 
@@ -211,7 +232,7 @@ ipcMain.handle('bot:start', () => {
   if (botProcess) return { running: true };
   if (!isProjectWorkspace(state.botDirectory)) throw new Error(projectFolderHelp);
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const runtimeConfigPath = writeRuntimeConfig(state.configPath);
+  const runtimeConfigPath = writeRuntimeConfig(state.configPath, state.botDirectory);
   botProcess = spawn(npm, ['start'], {
     cwd: state.botDirectory,
     env: { ...process.env, COBO_CONFIG_PATH: state.configPath, COBO_RUNTIME_CONFIG_PATH: runtimeConfigPath, COBO_CONFIG_FORMAT: 'json' },

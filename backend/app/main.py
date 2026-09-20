@@ -173,8 +173,8 @@ def desktop_dashboard(
     selected = selected_base or market or (next(reversed(markets)) if markets else "")
     number_table: dict[str, int] = {}
     breakdown = {
-        "OP": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}},
-        "CL": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}},
+        "OP": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}, "winning_numbers": {"ank": {}, "panna": {}, "jodi": {}}},
+        "CL": {"play": 0, "win": 0, "ank": {"play": 0, "win": 0}, "panna": {"play": 0, "win": 0}, "jodi": {"play": 0, "win": 0}, "winning_numbers": {"ank": {}, "panna": {}, "jodi": {}}},
     }
     for row in rows:
         row_market = str(row.get("Market", ""))
@@ -192,6 +192,10 @@ def desktop_dashboard(
             kind = "panna" if "panna" in winner["kind"] else winner["kind"]
             if kind in breakdown[side]:
                 breakdown[side][kind]["win"] += _money_amount(winner.get("win", 0))
+                number = str(winner.get("number", ""))
+                item = breakdown[side]["winning_numbers"][kind].setdefault(number, {"number": number, "stake": 0, "win": 0})
+                item["stake"] += _money_amount(winner.get("stake", 0))
+                item["win"] += _money_amount(winner.get("win", 0))
         for bet in row.get("Result", []) or []:
             if not isinstance(bet, (list, tuple)) or len(bet) < 2:
                 continue
@@ -202,6 +206,11 @@ def desktop_dashboard(
                     number_table[token] = number_table.get(token, 0) + amount
                     kind = "ank" if len(token) == 1 else "jodi" if len(token) == 2 else "panna"
                     breakdown[side][kind]["play"] += amount
+    for side in breakdown.values():
+        side["winning_numbers"] = {
+            kind: sorted(numbers.values(), key=lambda item: item["number"])
+            for kind, numbers in side["winning_numbers"].items()
+        }
     messages = []
     for row in rows[-30:][::-1]:
         row_contact = str(row.get("Contact", ""))

@@ -156,6 +156,11 @@ class Session(Reply_processor, Scheduler):
         return "\n".join([f"*{market}*", *rows, f"*TOTAL={total}*"]), total, bets
 
     def forward_unparsed(self, contact: str, market: str | None, text: str) -> bool:
+        # Instant Cutting customers must never receive the raw source message
+        # in an output group. Their only delivery is the calculated LD table.
+        if self.is_instant_cutting(contact):
+            print(f"Instant route: raw forward suppressed for {contact}/{market or 'unknown'}", flush=True)
+            return False
         target = self.director_target(contact, market, "fast_forward") if market else None
         if not target:
             # A no-market message has no per-market Director. Forward only when
@@ -173,6 +178,9 @@ class Session(Reply_processor, Scheduler):
 
     def forward_valid_play(self, contact: str, market: str, text: str) -> bool:
         """Send a valid accepted input directly only when this rule has a Fast Forward destination."""
+        if self.is_instant_cutting(contact):
+            print(f"Instant route: direct forward suppressed for {contact}/{market}", flush=True)
+            return False
         target = self.director_target(contact, market, "fast_forward")
         if not target:
             return False

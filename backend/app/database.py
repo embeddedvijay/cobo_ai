@@ -354,6 +354,43 @@ class Database:
             ("received_at", ASCENDING),
         ]).limit(limit))
 
+    def input_group_rows(self, client_name: str, session_name: str, source_jid: str, business_date: str) -> list[dict]:
+        """Every accepted row for one input group, including already-finalised rows.
+
+        Used only when an operator removes a play after the normal final was
+        sent. Cancelled/rejected rows are intentionally absent from the new
+        snapshot.
+        """
+        return list(self.raw.find({
+            "client_name": client_name,
+            "session_name": session_name,
+            "source_jid": source_jid,
+            "business_date": business_date,
+            "state": "processed",
+        }).sort([("message_timestamp", ASCENDING), ("received_at", ASCENDING)]))
+
+    def has_sent_input_group_total(self, client_name: str, session_name: str, source_jid: str, business_date: str) -> bool:
+        return self.outbox.find_one({
+            "client_name": client_name,
+            "session_name": session_name,
+            "target": source_jid,
+            "business_date": business_date,
+            "kind": "settlement_input_group_total",
+            "state": "sent",
+        }, {"_id": 1}) is not None
+
+    def claim_fast_forward_cancel(self, raw_id, cancel_message_id: str) -> bool:
+        """Forward one manual-cancel request for an unparsed play exactly once."""
+        result = self.raw.update_one(
+            {"_id": raw_id, "fast_forward_cancel_state": {"$ne": "requested"}},
+            {"$set": {
+                "fast_forward_cancel_state": "requested",
+                "fast_forward_cancel_requested_at": datetime.utcnow(),
+                "fast_forward_cancel_message_id": cancel_message_id,
+            }},
+        )
+        return result.modified_count == 1
+
     def reserve_settlement(self, raw_id) -> bool:
         result = self.raw.update_one(
             {"_id": raw_id, "settlement_state": {"$in": [None, "pending"]}},

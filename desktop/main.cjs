@@ -265,6 +265,12 @@ ipcMain.handle('desktop:output-groups', () => {
   const { config } = loadConfig(state.configPath);
   return desktopApi(`/desktop/output-groups?client_name=${encodeURIComponent(config.client_name || '')}&session_name=_runtime`);
 });
+ipcMain.handle('desktop:group-mappings', () => {
+  if (!botProcess) return { mappings: [] };
+  const state = ensureWorkspaceConfig();
+  const { config } = loadConfig(state.configPath);
+  return desktopApi(`/desktop/group-mappings?client_name=${encodeURIComponent(config.client_name || '')}&session_name=_runtime`);
+});
 ipcMain.handle('desktop:final-options', () => {
   const state = ensureWorkspaceConfig();
   const { config } = loadConfig(state.configPath);

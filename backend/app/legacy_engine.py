@@ -105,22 +105,26 @@ class LegacyEngine:
         with self.parallel_limits[key], source_lock:
             if self._is_cancel(raw["text"]):
                 reply, _reply_flag = self._process_cancel(session, raw)
+                reply_type = getattr(session, "last_reply_type", None)
             elif self._looks_like_cancel(raw["text"]):
                 reply, _reply_flag = self._wrong_cancel_format()
+                reply_type = None
             else:
                 reply, _reply_flag = session.process_incoming(raw["text"], raw["source_name"], raw["message_id"])
+                reply_type = getattr(session, "last_reply_type", None)
         if reply:
-            # Every valid live input receives its acknowledgement immediately
-            # on top of that exact WhatsApp message. raw_message contains the
-            # original Baileys key + message required for native quoted reply.
-            db.mark_raw(raw["_id"], "processed", normal_state="processed", legacy_reply=str(reply))
-            db.enqueue({
-                "client_name": raw["client_name"], "session_name": raw["session_name"],
-                "channel": "whatsapp", "target": raw["source_jid"], "text": str(reply),
-                "quote": raw["raw_message"], "kind": "normal_source_reply", "raw_id": raw["_id"],
-                "priority": 60, "business_date": raw["business_date"],
-            })
-            return {"status": "processed", "reply": str(reply)}
+            # Retain the parsed result for cancel/reconciliation even when the
+            # group has disabled this acknowledgement type.
+            send_live_reply = session.should_send_reply(raw["source_name"], reply_type)
+            db.mark_raw(raw["_id"], "processed", normal_state="processed" if send_live_reply else "suppressed", legacy_reply=str(reply))
+            if send_live_reply:
+                db.enqueue({
+                    "client_name": raw["client_name"], "session_name": raw["session_name"],
+                    "channel": "whatsapp", "target": raw["source_jid"], "text": str(reply),
+                    "quote": raw["raw_message"], "kind": "normal_source_reply", "raw_id": raw["_id"],
+                    "priority": 60, "business_date": raw["business_date"],
+                })
+            return {"status": "processed", "reply": str(reply) if send_live_reply else "", "reply_type": reply_type}
         # The legacy processor may forward/table-send without returning a direct
         # acknowledgement. Such a message has no text available for final quote mode.
         db.mark_raw(raw["_id"], "processed", normal_state="processed", final_reply_state="skipped")

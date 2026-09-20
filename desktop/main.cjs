@@ -245,6 +245,16 @@ ipcMain.handle('desktop:dashboard', (_event, { date, market = '', contact = '' }
   const { config } = loadConfig(state.configPath);
   return desktopApi(`/desktop/dashboard?date=${encodeURIComponent(date)}&client_name=${encodeURIComponent(config.client_name || '')}&session_name=_runtime&market=${encodeURIComponent(market)}&contact=${encodeURIComponent(contact)}`);
 });
+ipcMain.handle('desktop:final-options', () => {
+  const state = ensureWorkspaceConfig();
+  const { config } = loadConfig(state.configPath);
+  return desktopApi(`/desktop/final-options?client_name=${encodeURIComponent(config.client_name || '')}&session_name=_runtime`);
+});
+ipcMain.handle('desktop:run-final', (_event, { output_group }) => {
+  const state = ensureWorkspaceConfig();
+  const { config } = loadConfig(state.configPath);
+  return desktopApi('/desktop/run-final', { method: 'POST', body: JSON.stringify({ client_name: config.client_name || '', session_name: '_runtime', output_group }) });
+});
 ipcMain.handle('desktop:save-result', (_event, payload) => desktopApi('/desktop/results', { method: 'PUT', body: JSON.stringify(payload) }));
 ipcMain.handle('desktop:transactions', (_event, { date, contact = '' }) => {
   const state = ensureWorkspaceConfig();

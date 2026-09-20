@@ -193,7 +193,7 @@ class Session(Reply_processor, Scheduler):
             return False
         self.send_message_to(
             target,
-            "\n".join([f"*{market}*", "*LIMIT OVERFLOW*", *rows, f"*TOTAL={total}*" ]),
+            "\n".join([f"*{market}*", *rows, f"*TOTAL={total}*" ]),
             market=market,
             # Higher than an instant LD table (100): excess must leave first.
             priority=110,

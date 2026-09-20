@@ -92,7 +92,34 @@ class LegacyEngine:
         original_text = str((target or {}).get("text") or raw.get("quoted_text") or "").strip()
         if not original_text:
             return self._wrong_cancel_format()
-        return session.process_incoming(f"{original_text}\nCANCEL", raw["source_name"], raw["message_id"])
+        # A fast-forwarded message has no accepted legacy transaction/amount.
+        # Never pretend it was financially cancelled. Send one request to the
+        # same admin route and make the sender wait for that manual decision.
+        if target and not db.legacy_transaction(target):
+            # This administrative acknowledgement must never inherit a reply
+            # toggle from the previous message processed by this Session.
+            session.last_reply_type = None
+            if db.claim_fast_forward_cancel(target["_id"], raw["message_id"]):
+                from session_bot.reply_processor import format_check
+                market = format_check(original_text, session.client_name)
+                session.forward_unparsed(
+                    raw["source_name"], market,
+                    f"*CANCEL REQUEST*\n{original_text}",
+                )
+                return "*⏳ WAIT FOR ADMIN ACTION*", 1
+            return "*⏳ CANCEL REQUEST ALREADY SENT — WAIT FOR ADMIN ACTION*", 1
+        reply = session.process_incoming(f"{original_text}\nCANCEL", raw["source_name"], raw["message_id"])
+        # A financial CANCEL made after the ordinary final needs the same
+        # recalculated final format. The revision itself has no special label.
+        if target and db.legacy_transaction(raw) and db.has_sent_input_group_total(
+            raw["client_name"], raw["session_name"], raw["source_jid"], str(target["business_date"])
+        ):
+            from .output_settlement_service import output_settlement_service
+            output_settlement_service.queue_input_group_revision(
+                raw["client_name"], raw["session_name"], raw["source_jid"], str(target["business_date"]),
+                f"cancel:{raw['message_id']}",
+            )
+        return reply
 
     def process_one(self, raw: dict) -> dict:
         key = (raw["client_name"], raw["session_name"])

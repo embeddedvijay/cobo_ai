@@ -3,10 +3,19 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+# Electron supplies a generated desktop runtime configuration. Preserve it
+# across `.env` loading, otherwise an old COBO_RUNTIME_CONFIG_PATH in .env
+# silently makes the service start with config.yaml instead of the customer's
+# current Input Group rules.
+DESKTOP_RUNTIME_CONFIG="${COBO_RUNTIME_CONFIG_PATH:-}"
+
 if [[ -f .env ]]; then
   set -a
   source .env
   set +a
+fi
+if [[ -n "$DESKTOP_RUNTIME_CONFIG" ]]; then
+  export COBO_RUNTIME_CONFIG_PATH="$DESKTOP_RUNTIME_CONFIG"
 fi
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"

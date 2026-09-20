@@ -120,11 +120,26 @@ function desktopBackendUrl() {
   return String(config.whatsapp?.backend_url || 'http://127.0.0.1:8015').replace(/\/$/, '');
 }
 
+function isProjectWorkspace(directory) {
+  return Boolean(directory) &&
+    fs.existsSync(path.join(directory, 'package.json')) &&
+    fs.existsSync(path.join(directory, 'start.sh')) &&
+    fs.existsSync(path.join(directory, 'backend', 'app', 'main.py')) &&
+    fs.existsSync(path.join(directory, 'src', 'index.mjs'));
+}
+
+const projectFolderHelp = 'Choose the project folder that contains start.sh. Do not choose its desktop subfolder.';
+
 async function desktopApi(path, options = {}) {
-  const response = await fetch(`${desktopBackendUrl()}${path}`, {
-    headers: { 'content-type': 'application/json', ...(options.headers || {}) },
-    ...options,
-  });
+  let response;
+  try {
+    response = await fetch(`${desktopBackendUrl()}${path}`, {
+      headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+      ...options,
+    });
+  } catch (_error) {
+    throw new Error(`Local service is not running. ${projectFolderHelp} Then press Start Service.`);
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.detail || `Database request failed (${response.status})`);
   return payload;
@@ -186,7 +201,7 @@ ipcMain.handle('bot:choose-directory', async () => {
   const picked = await dialog.showOpenDialog(windowRef, { properties: ['openDirectory'] });
   if (picked.canceled || !picked.filePaths[0]) return readState();
   const botDirectory = picked.filePaths[0];
-  if (!fs.existsSync(path.join(botDirectory, 'package.json'))) throw new Error('Selected workspace must contain package.json.');
+  if (!isProjectWorkspace(botDirectory)) throw new Error(projectFolderHelp);
   const next = { ...ensureWorkspaceConfig(), botDirectory };
   saveState(next);
   return next;
@@ -194,7 +209,7 @@ ipcMain.handle('bot:choose-directory', async () => {
 ipcMain.handle('bot:start', () => {
   const state = ensureWorkspaceConfig();
   if (botProcess) return { running: true };
-  if (!state.botDirectory || !fs.existsSync(path.join(state.botDirectory, 'package.json'))) throw new Error('Choose the workspace folder first.');
+  if (!isProjectWorkspace(state.botDirectory)) throw new Error(projectFolderHelp);
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const runtimeConfigPath = writeRuntimeConfig(state.configPath);
   botProcess = spawn(npm, ['start'], {

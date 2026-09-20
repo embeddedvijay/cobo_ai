@@ -129,6 +129,7 @@ def get_client_table(client_name:str,market_name:str,contact_name = {"$exists":T
                 "Contact" : contact_name,
                 "Market" : market_name,
                 "Total" : {"$exists":True},
+                "Deleted" : {"$ne": True},
                 "Settled" : settled,
                 "CSettled":{"$exists":c_settled}
             }
@@ -202,6 +203,7 @@ def get_client_play(client_name:str,contact_name:str,market_name:str):
                 "Contact" : contact_name,
                 "Market" : market_name,
                 "Total" : {"$exists":True},
+                "Deleted" : {"$ne": True},
             }
         },
         {
@@ -244,6 +246,7 @@ def get_sequential_client_messages(client_name:str,contact_name:str,market_name:
             "Contact" : contact_name,
             "Market" : market_name,
             "Total" : {"$exists":True}
+            ,"Deleted" : {"$ne": True}
         },
     ).sort({"Time":1})
     data_list = []
@@ -297,7 +300,7 @@ def get_result_of_market(market:str):
 
 def contact_total_play(client_name: str, contact_name: str) -> int:
     row = next(_collection().aggregate([
-        {"$match": {"Client": client_name, "Contact": contact_name, "Total": {"$exists": True}}},
+        {"$match": {"Client": client_name, "Contact": contact_name, "Total": {"$exists": True}, "Deleted": {"$ne": True}}},
         {"$group": {"_id": None, "total": {"$sum": "$Total"}}},
     ]), None)
     return int((row or {}).get("total", 0))

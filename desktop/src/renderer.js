@@ -71,7 +71,7 @@ function destinationSelect(kind, current, attribute) {
 }
 function destinationInput(kind, current, attribute) {
   const placeholder = 'Select or type WhatsApp group name';
-  return `<span class="destination-combobox"><input ${attribute} list="outputGroupNames" value="${esc(current || '')}" placeholder="${placeholder}"><i>⌄</i></span>`;
+  return `<span class="destination-combobox"><input ${attribute} list="outputGroupNames" value="${esc(current || '')}" placeholder="${placeholder}"><i>⌄</i><small class="destination-status"></small></span>`;
 }
 function prepareGroupDialog() {
   $('#groupAllTable').value = '';
@@ -86,7 +86,58 @@ async function loadOutputGroups() {
     if (list) list.innerHTML = availableOutputGroups.map(name => `<option value="${esc(name)}"></option>`).join('');
     loadGroupMappings();
     renderGroups();
+    // Once the bridge has returned real group names, re-check existing saved
+    // destinations too. An old typo/ambiguous name therefore turns red even
+    // before the user clicks Save again.
+    if (availableOutputGroups.length) {
+      const visibleGroups = $('#groupManagerSecondary') || $('#groupManager');
+      if (visibleGroups) validateDestinationInputs(visibleGroups);
+    }
   } catch (_) { availableOutputGroups = []; const list = $('#outputGroupNames'); if (list) list.innerHTML = ''; renderGroups(); }
+}
+function showDestinationStatus(input, state, message = '') {
+  const box = input.closest('.destination-combobox');
+  if (!box) return;
+  box.classList.remove('valid', 'invalid', 'pending');
+  if (state) box.classList.add(state);
+  const status = box.querySelector('.destination-status');
+  if (status) status.textContent = message;
+}
+async function validateDestinationInput(input) {
+  const value = input.value.trim();
+  if (!value) { showDestinationStatus(input); return true; }
+  if (!window.cobo.resolveOutputGroup) return true;
+  const requestId = String(Number(input.dataset.validationRequest || 0) + 1);
+  input.dataset.validationRequest = requestId;
+  showDestinationStatus(input, 'pending', 'Checking WhatsApp group…');
+  try {
+    const result = await window.cobo.resolveOutputGroup(value);
+    if (input.dataset.validationRequest !== requestId) return false;
+    if (result.status === 'exact' || result.status === 'fuzzy') {
+      input.value = result.group_name;
+      showDestinationStatus(input, 'valid', result.status === 'fuzzy' ? `✓ Matched: ${result.group_name}` : '✓ WhatsApp group matched');
+      return true;
+    }
+    if (result.status === 'unavailable') {
+      showDestinationStatus(input, 'pending', 'Start Service to load and validate WhatsApp groups.');
+      return true;
+    }
+    if (result.status === 'ambiguous') {
+      const names = (result.matches || []).map(item => item.group_name).join(' / ');
+      showDestinationStatus(input, 'invalid', `Multiple similar groups: ${names}. Type/select the exact name.`);
+      return false;
+    }
+    showDestinationStatus(input, 'invalid', 'Group not found. Select a WhatsApp group or correct its name.');
+    return false;
+  } catch (_) {
+    showDestinationStatus(input, 'pending', 'Start Service to load and validate WhatsApp groups.');
+    return true;
+  }
+}
+async function validateDestinationInputs(root) {
+  const inputs = [...root.querySelectorAll('input[list="outputGroupNames"]')];
+  const checks = await Promise.all(inputs.map(validateDestinationInput));
+  return checks.every(Boolean);
 }
 async function loadGroupMappings() {
   const root = $('#groupMappings');
@@ -257,7 +308,7 @@ function markGroupDirty(card) {
   const button = card.querySelector('[data-action="save-group"]');
   if (button) button.textContent = 'Save Changes ●';
 }
-function saveGroup(card) {
+async function saveGroup(card) {
   const oldName = card.dataset.group;
   const nextName = card.querySelector('.group-name').value.trim();
   if (!nextName) return;
@@ -268,6 +319,10 @@ function saveGroup(card) {
   ].filter(Boolean);
   const overflowTarget = card.querySelector('[data-overflow="output_group"]')?.value.trim();
   if (overflowTarget) routes.push(overflowTarget);
+  if (!await validateDestinationInputs(card)) {
+    alert('Fix the red output-group field before saving.');
+    return;
+  }
   const inputNames = new Set(contacts().map(([name]) => name.toLocaleLowerCase()));
   const invalid = routes.find(value => inputNames.has(value.toLocaleLowerCase()));
   if (invalid) { alert(`“${invalid}” is an input group, not an output destination. Select its output group or paste its @g.us JID.`); return; }
@@ -297,9 +352,9 @@ function saveGroup(card) {
     card.querySelectorAll('[data-rate]').forEach(input => { group.win_rate[input.dataset.rate] = Number(input.value || 0); });
   });
 }
-function groupClick(event) {
+async function groupClick(event) {
   const card=event.target.closest('.group-card'); if(!card) return; const name=card.dataset.group;
-  if(event.target.dataset.action==='save-group'){saveGroup(card);return;}
+  if(event.target.dataset.action==='save-group'){await saveGroup(card);return;}
   if(event.target.dataset.action==='delete-group') mutate(next=>delete next.in_contacts[name]);
   if(event.target.dataset.action==='add-override'){overrideTargetGroup=name;prepareOverrideDialog();$('#overrideDialog').showModal();}
   if(event.target.dataset.action==='delete-override'){const row=event.target.closest('.override-row');mutate(next=>delete next.in_contacts[name].Director.market_overrides[row.dataset.market]);}
@@ -427,15 +482,15 @@ $('#marketEditor').addEventListener('click',event=>{
   if(dayButton){const day=Number(dayButton.dataset.day);selectedMarketDays.has(day)?selectedMarketDays.delete(day):selectedMarketDays.add(day);dayButton.classList.toggle('checked',selectedMarketDays.has(day));const note=$('#activeDaysNote');if(note)note.textContent=`${selectedMarketDays.size} day${selectedMarketDays.size === 1 ? '' : 's'} selected — Save Market to apply`;return;}
   if(event.target.dataset.action!=='save-market')return;const edit=$('#marketEditor');const val=k=>Number(edit.querySelector('[data-edit="'+k+'"]').value||0);mutate(next=>{const row=next.fixed_market_time[selectedMarketKey];const days=[...selectedMarketDays].sort((a,b)=>a-b);next.market_days ||= {};next.market_days[selectedMarketKey]=days;row[1]=days.length;row[0]={hour:val('startHour'),minute:val('startMinute'),second:0};row[2]={hour:val('endHour'),minute:val('endMinute'),second:0};});
 });
-['#groupManager','#groupManagerSecondary'].forEach(id=>{const node=$(id);if(node){node.addEventListener('change',groupChange);node.addEventListener('click',groupClick);}});
+['#groupManager','#groupManagerSecondary'].forEach(id=>{const node=$(id);if(node){node.addEventListener('change',groupChange);node.addEventListener('click',groupClick);node.addEventListener('focusout',event=>{if(event.target.matches('input[list="outputGroupNames"]')) validateDestinationInput(event.target);});}});
 ['#addGroup','#addGroupSecondary'].forEach(id=>{const node=$(id);if(node)node.addEventListener('click',()=>{prepareGroupDialog();$('#groupDialog').showModal();});});
 $('#addMarket').addEventListener('click',()=>$('#marketDialog').showModal());
 document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$('#'+button.dataset.close).close()));
-$('#groupForm').addEventListener('submit',event=>{event.preventDefault();const d=new FormData(event.currentTarget);const name=String(d.get('name')).trim();if(!name)return;mutate(next=>{next.in_contacts ||= {};next.in_contacts[name]={LD:Number(d.get('ld')||100),Limit:Number(d.get('limit')||0),instant_cutting:d.get('instant')==='on',reply_settings:{normal_ok:true,fast_forward_ok:true,total_ok:true},overflow_limits:{output_group:'',ank:0,jodi:0,sp:0,dp:0,tp:0},Director:{all_table:String(d.get('allTable')||'').trim(),all_fast_forward:String(d.get('allForward')||'').trim(),market_overrides:{}},win_rate:{ANK:Number(d.get('ank')||0),Jodi:Number(d.get('jodi')||0),SP:Number(d.get('sp')||0),DP:Number(d.get('dp')||0),TP:Number(d.get('tp')||0),FS:Number(d.get('fs')||0),HS:Number(d.get('hs')||0),Commission:Number(d.get('commission')||0)}};});event.currentTarget.reset();$('#groupDialog').close();});
-$('#overrideForm').addEventListener('submit',event=>{event.preventDefault();const d=new FormData(event.currentTarget);const market=String(d.get('market')).trim();if(!market||!overrideTargetGroup)return;mutate(next=>{const group=next.in_contacts[overrideTargetGroup];group.Director ||= {};group.Director.market_overrides ||= {};group.Director.market_overrides[market]={table:String(d.get('table')||'').trim(),fast_forward:String(d.get('forward')||'').trim()};});event.currentTarget.reset();$('#overrideDialog').close();overrideTargetGroup='';});
+$('#groupForm').addEventListener('submit',async event=>{event.preventDefault();if(!await validateDestinationInputs(event.currentTarget)){alert('Fix the red output-group field before adding this input group.');return;}const d=new FormData(event.currentTarget);const name=String(d.get('name')).trim();if(!name)return;mutate(next=>{next.in_contacts ||= {};next.in_contacts[name]={LD:Number(d.get('ld')||100),Limit:Number(d.get('limit')||0),instant_cutting:d.get('instant')==='on',reply_settings:{normal_ok:true,fast_forward_ok:true,total_ok:true},overflow_limits:{output_group:'',ank:0,jodi:0,sp:0,dp:0,tp:0},Director:{all_table:String(d.get('allTable')||'').trim(),all_fast_forward:String(d.get('allForward')||'').trim(),market_overrides:{}},win_rate:{ANK:Number(d.get('ank')||0),Jodi:Number(d.get('jodi')||0),SP:Number(d.get('sp')||0),DP:Number(d.get('dp')||0),TP:Number(d.get('tp')||0),FS:Number(d.get('fs')||0),HS:Number(d.get('hs')||0),Commission:Number(d.get('commission')||0)}};});event.currentTarget.reset();$('#groupDialog').close();});
+$('#overrideForm').addEventListener('submit',async event=>{event.preventDefault();if(!await validateDestinationInputs(event.currentTarget)){alert('Fix the red output-group field before adding this destination.');return;}const d=new FormData(event.currentTarget);const market=String(d.get('market')).trim();if(!market||!overrideTargetGroup)return;mutate(next=>{const group=next.in_contacts[overrideTargetGroup];group.Director ||= {};group.Director.market_overrides ||= {};group.Director.market_overrides[market]={table:String(d.get('table')||'').trim(),fast_forward:String(d.get('forward')||'').trim()};});event.currentTarget.reset();$('#overrideDialog').close();overrideTargetGroup='';});
 $('#marketForm').addEventListener('submit',event=>{event.preventDefault();const d=new FormData(event.currentTarget);const name=String(d.get('name')).trim();if(!name)return;mutate(next=>{next.fixed_market_time ||= {};next.fixed_market_time[name]=[{hour:Number(d.get('startHour')||0),minute:Number(d.get('startMinute')||0),second:0},Number(d.get('days')||0),{hour:Number(d.get('endHour')||0),minute:Number(d.get('endMinute')||0),second:0}];selectedMarketKey=name;});event.currentTarget.reset();$('#marketDialog').close();});
 async function chooseWorkspace(){try{const state=await window.cobo.chooseBotDirectory();log(state.botDirectory?'Project folder: '+state.botDirectory:'Project folder unchanged.');}catch(error){alert(error.message);}}
-async function startService(){try{await window.cobo.startBot();log('Service started.');setTimeout(loadOutputGroups,1200);}catch(error){alert(error.message);}}
+async function startService(){try{await window.cobo.startBot();log('Service started. Loading connected WhatsApp groups…');[1200,3500,7000].forEach(delay=>setTimeout(loadOutputGroups,delay));}catch(error){alert(error.message);}}
 $('#chooseBot').addEventListener('click',chooseWorkspace);$('#launchService').addEventListener('click',startService);$('#stopBot').addEventListener('click',()=>window.cobo.stopBot());
 $('#dashboardStart').addEventListener('click',startService);
 $('#refreshDashboard').addEventListener('click',loadDashboard);

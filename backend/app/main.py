@@ -194,6 +194,12 @@ def desktop_transactions(
     if client_name:
         base_query["Client"] = client_name
     contacts = sorted(str(item) for item in collection.distinct("Contact", base_query) if item)
+    # Legacy records store the WhatsApp JID in Contact. The bridge separately
+    # persists its configured display name, which we use only for the UI.
+    contact_names = {
+        item: db.group_name_for_jid(client_name, "_runtime", item) or item
+        for item in contacts
+    }
     query = dict(base_query)
     if contact:
         query["Contact"] = contact
@@ -203,6 +209,7 @@ def desktop_transactions(
             "id": str(row["_id"]),
             "client": str(row.get("Client", "")),
             "contact": str(row.get("Contact", "")),
+            "contact_name": contact_names.get(str(row.get("Contact", "")), str(row.get("Contact", ""))),
             "market": str(row.get("Market", "")),
             "time": str(row.get("Time", "")),
             "message": str(row.get("Message", "")),
@@ -210,7 +217,12 @@ def desktop_transactions(
             "action": str(row.get("Action", "")),
             "settled": bool(row.get("Settled", False)),
         })
-    return {"date": date, "contacts": contacts, "transactions": rows, "total_play": sum(item["total"] for item in rows)}
+    return {
+        "date": date,
+        "contacts": [{"value": item, "name": contact_names[item]} for item in contacts],
+        "transactions": rows,
+        "total_play": sum(item["total"] for item in rows),
+    }
 
 
 @app.put("/desktop/transactions")

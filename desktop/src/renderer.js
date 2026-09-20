@@ -68,6 +68,10 @@ function destinationOptions(kind, current = '') {
 function destinationSelect(kind, current, attribute) {
   return `<select ${attribute}>${destinationOptions(kind, current)}</select>`;
 }
+function destinationInput(kind, current, attribute) {
+  const placeholder = kind === 'table' ? 'Select group or paste @g.us JID' : 'Select group or paste @g.us JID';
+  return `<input ${attribute} list="outputGroupNames" value="${esc(current || '')}" placeholder="${placeholder}">`;
+}
 function prepareGroupDialog() {
   $('#groupAllTable').innerHTML = destinationOptions('table');
   $('#groupAllForward').innerHTML = destinationOptions('fast_forward');
@@ -77,8 +81,10 @@ async function loadOutputGroups() {
   try {
     const data = await window.cobo.outputGroups();
     availableOutputGroups = [...new Set(data.groups || [])];
+    const list = $('#outputGroupNames');
+    if (list) list.innerHTML = availableOutputGroups.map(name => `<option value="${esc(name)}"></option>`).join('');
     renderGroups();
-  } catch (_) { availableOutputGroups = []; renderGroups(); }
+  } catch (_) { availableOutputGroups = []; const list = $('#outputGroupNames'); if (list) list.innerHTML = ''; renderGroups(); }
 }
 
 const money = value => `₹${Number(value || 0).toLocaleString('en-IN')}`;
@@ -215,8 +221,8 @@ function renderGroups() {
     const overrides = director.market_overrides || {};
     return `<article class="group-card" data-group="${esc(name)}">
       <div class="group-head"><div><small>CUSTOMER GROUP</small><input class="group-name" value="${esc(name)}"></div><div class="active-group">● Active</div><button class="secondary group-save" data-action="save-group">Save Changes</button><button class="icon danger" data-action="delete-group">⌫</button></div>
-      <div class="customer-fields"><label>LD %<input data-field="LD" type="text" inputmode="decimal" value="${esc(group.LD ?? 100)}"></label><label>Limit (₹)<input data-field="Limit" type="text" inputmode="numeric" value="${esc(group.Limit ?? 0)}"></label><label class="cutting-label">⚡ Instant Cutting<input data-field="instant_cutting" type="checkbox" ${group.instant_cutting ? 'checked' : ''}></label><label>All Table${destinationSelect('table', director.all_table || '', 'data-director="all_table"')}</label><label>All Forward${destinationSelect('fast_forward', director.all_fast_forward || '', 'data-director="all_fast_forward"')}</label></div>
-      <div class="group-lower"><div class="override-box"><div class="mini-title">⌄ Market-wise destinations <button data-action="add-override">＋ Add</button></div>${Object.entries(overrides).map(([market,route])=>`<div class="override-row" data-market="${esc(market)}"><b>${esc(market)}</b>${destinationSelect('table', route.table || '', 'data-route="table"')}${destinationSelect('fast_forward', route.fast_forward || '', 'data-route="fast_forward"')}<button class="icon danger" data-action="delete-override">−</button></div>`).join('') || '<p class="muted">All markets use default destinations.</p>'}</div>
+      <div class="customer-fields"><label>LD %<input data-field="LD" type="text" inputmode="decimal" value="${esc(group.LD ?? 100)}"></label><label>Limit (₹)<input data-field="Limit" type="text" inputmode="numeric" value="${esc(group.Limit ?? 0)}"></label><label class="cutting-label">⚡ Instant Cutting<input data-field="instant_cutting" type="checkbox" ${group.instant_cutting ? 'checked' : ''}></label><label>All Table${destinationInput('table', director.all_table || '', 'data-director="all_table"')}</label><label>All Forward${destinationInput('fast_forward', director.all_fast_forward || '', 'data-director="all_fast_forward"')}</label></div>
+      <div class="group-lower"><div class="override-box"><div class="mini-title">⌄ Market-wise destinations <button data-action="add-override">＋ Add</button></div>${Object.entries(overrides).map(([market,route])=>`<div class="override-row" data-market="${esc(market)}"><b>${esc(market)}</b>${destinationInput('table', route.table || '', 'data-route="table"')}${destinationInput('fast_forward', route.fast_forward || '', 'data-route="fast_forward"')}<button class="icon danger" data-action="delete-override">−</button></div>`).join('') || '<p class="muted">All markets use default destinations.</p>'}</div>
       <div class="rates-box"><div class="mini-title">Win Rate</div><div class="rate-grid">${['ANK','Jodi','SP','DP','TP','FS','HS','Commission'].map(key=>`<label>${key}<input data-rate="${key}" type="text" inputmode="decimal" value="${esc(group.win_rate?.[key] ?? '')}"></label>`).join('')}</div></div></div>
     </article>`;
   }).join('') || '<div class="empty-groups"><b>No input groups yet</b><span>Use Add Input Group to create the first customer rule.</span></div>';
@@ -235,6 +241,14 @@ function saveGroup(card) {
   const oldName = card.dataset.group;
   const nextName = card.querySelector('.group-name').value.trim();
   if (!nextName) return;
+  const routes = [
+    card.querySelector('[data-director="all_table"]').value.trim(),
+    card.querySelector('[data-director="all_fast_forward"]').value.trim(),
+    ...[...card.querySelectorAll('.override-row')].flatMap(row => [row.querySelector('[data-route="table"]').value.trim(), row.querySelector('[data-route="fast_forward"]').value.trim()]),
+  ].filter(Boolean);
+  const inputNames = new Set(contacts().map(([name]) => name.toLocaleLowerCase()));
+  const invalid = routes.find(value => inputNames.has(value.toLocaleLowerCase()));
+  if (invalid) { alert(`“${invalid}” is an input group, not an output destination. Select its output group or paste its @g.us JID.`); return; }
   mutate(next => {
     const group = next.in_contacts?.[oldName]; if (!group) return;
     if (nextName !== oldName) { next.in_contacts[nextName] = group; delete next.in_contacts[oldName]; }

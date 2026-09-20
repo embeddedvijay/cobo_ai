@@ -232,6 +232,7 @@ class Reply_processor(dynamic_time_manager):
                             add_data(data)
                             if data.get("dynamic_validation") is True:
                                 self.notify_limit_once(contact)
+                                self.forward_valid_play(contact, market, text)
                                 if self.is_instant_cutting(contact):
                                     self.send_instant_table(contact, market, result_list)
                             return msg,1
@@ -266,6 +267,7 @@ class Reply_processor(dynamic_time_manager):
                     data["Analysis"] = hla_analysis
                     add_data(data)
                     self.notify_limit_once(contact)
+                    self.forward_valid_play(contact, market, text)
                     if instant:
                         self.send_instant_table(contact, market, result_list)
                     return msg,0
@@ -529,5 +531,4 @@ class Reply_processor(dynamic_time_manager):
         if time == "NIGHT":
             self.send_message_to(self.out_contacts['win'],"*Thanks for your support. Your Demo is completed...*")
             self.send_message_to(self.out_contacts['win'],"*Logout..........*")
-
 

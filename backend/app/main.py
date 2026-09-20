@@ -553,6 +553,17 @@ def reject_desktop_transaction(payload: TransactionReject):
                 "final_reply_state": "skipped", "operator_rejected_at": now,
             }},
         )
+        raw = db.raw.find_one({
+            "client_name": client_name, "session_name": "_runtime", "message_id": message_id,
+        })
+        # If the regular final was already delivered, publish the same normal
+        # date-wise format again with the rejected transaction excluded. No
+        # customer-facing "correction" label is added.
+        if raw and db.has_sent_input_group_total(client_name, "_runtime", str(raw["source_jid"]), payload.date):
+            output_settlement_service.queue_input_group_revision(
+                client_name, "_runtime", str(raw["source_jid"]), payload.date,
+                f"reject:{payload.record_id}",
+            )
     return {"ok": True, "record_id": payload.record_id}
 
 

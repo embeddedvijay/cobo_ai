@@ -98,6 +98,10 @@ async function resolveGroups(runtime) {
     if (!row.roles.includes(role)) row.roles.push(role);
     mappings.set(key, row);
   };
+  // Keep every WhatsApp group locally available to the desktop picker. The
+  // picker still stores a human-readable name, while this bridge resolves the
+  // current JID on every connection.
+  for (const group of Object.values(groups)) addMapping(group.subject, group.id, 'available');
   for (const [jid, name] of runtime.input) addMapping(name, jid, 'input');
   for (const [name, jid] of runtime.output) addMapping(name, jid, 'output');
   await http.post('/groups/sync', {

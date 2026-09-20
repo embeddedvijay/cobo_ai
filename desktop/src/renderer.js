@@ -4,6 +4,7 @@ const tabs = [...document.querySelectorAll('.control-tab')];
 let summary;
 let selectedMarketKey = '';
 let overrideTargetGroup = '';
+let selectedMarketDays = new Set();
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -86,11 +87,12 @@ function renderTimingTable() {
   const current = getConfig().fixed_market_time?.[selectedMarketKey];
   if (!current) { editor.innerHTML = ''; return; }
   const selectedDays = daysFor(selectedMarketKey, current);
+  selectedMarketDays = new Set(selectedDays);
   editor.innerHTML = `<div class="edit-head"><div class="edit-icon">＋</div><div><h2>Add / Edit Market</h2><p>Create or update market timings</p></div></div>
     <label>Market Name<input value="${esc(pretty(selectedMarketKey))}" disabled></label>
     <label>Phase</label><div class="phase-toggle"><button data-phase="OP" class="${selectedMarketKey.endsWith('_OP') ? 'on' : ''}">Open</button><button data-phase="CL" class="${selectedMarketKey.endsWith('_CL') ? 'on' : ''}">Close</button></div>
     <div class="editor-time-grid"><label>Start Time<div><input data-edit="startHour" type="number" min="0" max="23" value="${esc(current[0]?.hour ?? 0)}"><input data-edit="startMinute" type="number" min="0" max="59" value="${esc(current[0]?.minute ?? 0)}"></div></label><label>End Time<div><input data-edit="endHour" type="number" min="0" max="23" value="${esc(current[2]?.hour ?? 0)}"><input data-edit="endMinute" type="number" min="0" max="59" value="${esc(current[2]?.minute ?? 0)}"></div></label></div>
-    <label>Active Days</label><div class="weekday-row">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day,index)=>`<button type="button" data-day="${index}" class="${selectedDays.includes(index) ? 'checked' : ''}">${day}</button>`).join('')}</div>
+    <label>Active Days</label><div class="weekday-row">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day,index)=>`<button type="button" data-day="${index}" class="${selectedDays.includes(index) ? 'checked' : ''}">${day}</button>`).join('')}</div><p class="editor-note" id="activeDaysNote">${selectedDays.length} day${selectedDays.length === 1 ? '' : 's'} selected</p>
     <button class="primary editor-save" data-action="save-market">▣ &nbsp; Save Market</button>`;
 }
 function renderGroups() {
@@ -144,8 +146,8 @@ $('#marketEditor').addEventListener('click',event=>{
   const phaseButton=event.target.closest('[data-phase]');
   if(phaseButton){const key=selectedMarketKey.replace(/_(OP|CL)$/, `_${phaseButton.dataset.phase}`);if(getConfig().fixed_market_time?.[key]){selectedMarketKey=key;renderTimingTable();}return;}
   const dayButton=event.target.closest('[data-day]');
-  if(dayButton){const day=Number(dayButton.dataset.day);mutate(next=>{next.market_days ||= {};const row=next.fixed_market_time[selectedMarketKey];const current=next.market_days[selectedMarketKey] || Array.from({length:Number(row?.[1]||0)},(_,index)=>index);const days=new Set(current.map(Number));days.has(day)?days.delete(day):days.add(day);const ordered=[...days].sort((a,b)=>a-b);next.market_days[selectedMarketKey]=ordered;row[1]=ordered.length;});return;}
-  if(event.target.dataset.action!=='save-market')return;const edit=$('#marketEditor');const val=k=>Number(edit.querySelector('[data-edit="'+k+'"]').value||0);mutate(next=>{const row=next.fixed_market_time[selectedMarketKey];row[0]={hour:val('startHour'),minute:val('startMinute'),second:0};row[2]={hour:val('endHour'),minute:val('endMinute'),second:0};});
+  if(dayButton){const day=Number(dayButton.dataset.day);selectedMarketDays.has(day)?selectedMarketDays.delete(day):selectedMarketDays.add(day);dayButton.classList.toggle('checked',selectedMarketDays.has(day));const note=$('#activeDaysNote');if(note)note.textContent=`${selectedMarketDays.size} day${selectedMarketDays.size === 1 ? '' : 's'} selected — Save Market to apply`;return;}
+  if(event.target.dataset.action!=='save-market')return;const edit=$('#marketEditor');const val=k=>Number(edit.querySelector('[data-edit="'+k+'"]').value||0);mutate(next=>{const row=next.fixed_market_time[selectedMarketKey];const days=[...selectedMarketDays].sort((a,b)=>a-b);next.market_days ||= {};next.market_days[selectedMarketKey]=days;row[1]=days.length;row[0]={hour:val('startHour'),minute:val('startMinute'),second:0};row[2]={hour:val('endHour'),minute:val('endMinute'),second:0};});
 });
 ['#groupManager','#groupManagerSecondary'].forEach(id=>{const node=$(id);if(node){node.addEventListener('change',groupChange);node.addEventListener('click',groupClick);}});
 ['#addGroup','#addGroupSecondary'].forEach(id=>{const node=$(id);if(node)node.addEventListener('click',()=>$('#groupDialog').showModal());});

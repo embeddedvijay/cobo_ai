@@ -87,6 +87,8 @@ async function loadDashboard() {
   try {
     const data = await window.cobo.dashboard({ date: todayBusinessDate(), market: dashboardMarket, contact: dashboardContact });
     dashboardMarket = data.selected_market || '';
+    $('#dashboardTotalPlay').textContent = money(data.total_play);
+    $('#dashboardTotalWin').textContent = money(data.total_win);
     $('#metricCards').innerHTML = (data.customers || []).map((row, index) => `<button class="metric live-customer metric-${index % 4} ${row.contact === dashboardContact ? 'selected' : ''}" data-dashboard-contact="${esc(row.contact)}"><small>${esc(row.name)}</small><div class="live-progress"><i style="width:${Math.min(100, Number(row.play || 0) ? 62 : 0)}%"></i></div><div class="live-totals"><span>PLAY <b>${money(row.play)}</b></span><span>WIN <b>${money(row.win)}</b></span></div></button>`).join('') || '<div class="metric"><small>Today Play</small><strong>₹0</strong><span>No accepted message yet</span></div>';
     $('#contactCount').textContent = `${data.customers?.length || 0} groups`;
     $('#marketCount').textContent = `${data.markets?.length || 0} markets${dashboardContact ? ' · selected customer' : ''}`;
@@ -232,14 +234,16 @@ async function saveResult(card) {
   const note = card.querySelector('.result-save-note'); note.textContent = 'Saving…';
   try { await window.cobo.saveResult(payload); note.textContent = 'Saved'; } catch (error) { note.textContent = error.message; }
 }
+function transactionState(row) { return row.settled ? 'settled' : row.result_ready ? 'ready' : 'pending'; }
 function transactionRow(row) {
-  return `<article class="transaction-row" data-record-id="${esc(row.id)}"><div class="transaction-meta"><b>${esc(row.market || 'Unknown market')}</b><strong>${esc(row.contact_name || row.contact || 'Unknown group')}</strong><span>${esc(row.time || '—')}</span></div><textarea data-transaction="message" rows="5" aria-label="Message">${esc(row.message)}</textarea><input data-transaction="total" type="text" inputmode="numeric" value="${esc(row.total)}"><div class="transaction-state ${row.settled ? 'settled' : ''}">${row.settled ? 'Settled' : 'Pending'}</div><button class="secondary" data-action="save-transaction">Save</button></article>`;
+  const state = transactionState(row); const label = state === 'settled' ? 'Settled' : state === 'ready' ? 'Result Ready' : 'Pending';
+  return `<article class="transaction-row" data-record-id="${esc(row.id)}"><div class="transaction-meta"><b>${esc(row.market || 'Unknown market')}</b><strong>${esc(row.contact_name || row.contact || 'Unknown group')}</strong><span>${esc(row.time || '—')}</span></div><textarea data-transaction="message" rows="5" aria-label="Message">${esc(row.message)}</textarea><input data-transaction="total" type="text" inputmode="numeric" value="${esc(row.total)}"><div class="transaction-state ${state}">${label}</div><button class="secondary" data-action="save-transaction">Save</button></article>`;
 }
 function resizeTransactionMessages() { document.querySelectorAll('[data-transaction="message"]').forEach(area => { area.style.height = 'auto'; area.style.height = `${Math.min(Math.max(area.scrollHeight, 98), 190)}px`; }); }
 function renderTransactions() {
   const market = $('#transactionMarket')?.value || '';
   const state = $('#transactionState')?.value || '';
-  const rows = loadedTransactions.filter(row => (!market || row.market === market) && (!state || (state === 'settled' ? row.settled : !row.settled)));
+  const rows = loadedTransactions.filter(row => (!market || row.market === market) && (!state || transactionState(row) === state));
   $('#transactionCount').textContent = String(rows.length);
   $('#transactionPlay').textContent = `₹${rows.reduce((total, row) => total + Number(row.total || 0), 0)}`;
   $('#transactionList').innerHTML = rows.map(transactionRow).join('') || '<div class="empty-data">No record matches these filters.</div>'; resizeTransactionMessages();

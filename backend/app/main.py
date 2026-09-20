@@ -125,7 +125,14 @@ def desktop_market_names(client_name: str, session_name: str, result_doc: dict) 
     for key, value in result_doc.items():
         if key not in {"_id", "Result"} and isinstance(value, dict):
             names.add(str(key))
-    return sorted(names)
+    # Result board stays in the operator's familiar market-family order while
+    # retaining every configured DAY/NIGHT variant as one OP+CL result card.
+    family_order = ("SRIDEVI", "TIME_BAZAR", "MAIN_BAZAR", "MADHUR", "MILAN", "RAJDHANI", "SUPREME", "KALYAN")
+    def market_order(name: str):
+        upper = str(name).upper()
+        index = next((i for i, family in enumerate(family_order) if upper.startswith(family)), len(family_order))
+        return (index, upper)
+    return sorted(names, key=market_order)
 
 
 def _money_amount(value) -> int:

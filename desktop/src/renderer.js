@@ -230,10 +230,13 @@ function renderGroups() {
     const director = group.Director || {};
     const overrides = director.market_overrides || {};
     const reply = group.reply_settings || {};
+    const overflow = group.overflow_limits || {};
+    const overflowEnabled = Number(group.LD ?? 100) === 100;
     return `<article class="group-card" data-group="${esc(name)}">
       <div class="group-head"><div><small>CUSTOMER GROUP</small><input class="group-name" value="${esc(name)}"></div><div class="active-group">● Active</div><button class="secondary group-save" data-action="save-group">Save Changes</button><button class="icon danger" data-action="delete-group">⌫</button></div>
       <div class="customer-fields"><label>LD %<input data-field="LD" type="text" inputmode="decimal" value="${esc(group.LD ?? 100)}"></label><label>Limit (₹)<input data-field="Limit" type="text" inputmode="numeric" value="${esc(group.Limit ?? 0)}"></label><label class="cutting-label">⚡ Instant Cutting<input data-field="instant_cutting" type="checkbox" ${group.instant_cutting ? 'checked' : ''}></label><label>All Table${destinationInput('table', director.all_table || '', 'data-director="all_table"')}</label><label>All Forward${destinationInput('fast_forward', director.all_fast_forward || '', 'data-director="all_fast_forward"')}</label></div>
       <div class="reply-box"><div class="mini-title">Bot replies</div><p>Choose acknowledgement types for this input group.</p><label><input data-reply="normal_ok" type="checkbox" ${reply.normal_ok !== false ? 'checked' : ''}> Normal OK</label><label><input data-reply="fast_forward_ok" type="checkbox" ${reply.fast_forward_ok !== false ? 'checked' : ''}> Fast-forward OK</label><label><input data-reply="total_ok" type="checkbox" ${reply.total_ok !== false ? 'checked' : ''}> Missing / wrong total OK</label></div>
+      <div class="overflow-box ${overflowEnabled ? '' : 'disabled'}"><div><div class="mini-title">100% LD category overflow</div><p>${overflowEnabled ? 'For each game line, only the amount above its category limit is sent instantly.' : 'Available only when LD is exactly 100%.'}</p></div>${overflowEnabled ? `<label>Overflow output${destinationInput('table', overflow.output_group || '', 'data-overflow="output_group"')}</label><div class="overflow-limits">${[['ank','ANK'],['jodi','JODI'],['sp','SP'],['dp','DP'],['tp','TP']].map(([key,label])=>`<label>${label} limit<input data-overflow="${key}" type="text" inputmode="numeric" value="${esc(overflow[key] ?? 0)}"></label>`).join('')}</div>` : ''}</div>
       <div class="group-lower"><div class="override-box"><div class="mini-title">⌄ Market-wise destinations <button data-action="add-override">＋ Add</button></div>${Object.entries(overrides).map(([market,route])=>`<div class="override-row" data-market="${esc(market)}"><b>${esc(market)}</b>${destinationInput('table', route.table || '', 'data-route="table"')}${destinationInput('fast_forward', route.fast_forward || '', 'data-route="fast_forward"')}<button class="icon danger" data-action="delete-override">−</button></div>`).join('') || '<p class="muted">All markets use default destinations.</p>'}</div>
       <div class="rates-box"><div class="mini-title">Win Rate</div><div class="rate-grid">${['ANK','Jodi','SP','DP','TP','FS','HS','Commission'].map(key=>`<label>${key}<input data-rate="${key}" type="text" inputmode="decimal" value="${esc(group.win_rate?.[key] ?? '')}"></label>`).join('')}</div></div></div>
     </article>`;
@@ -258,6 +261,8 @@ function saveGroup(card) {
     card.querySelector('[data-director="all_fast_forward"]').value.trim(),
     ...[...card.querySelectorAll('.override-row')].flatMap(row => [row.querySelector('[data-route="table"]').value.trim(), row.querySelector('[data-route="fast_forward"]').value.trim()]),
   ].filter(Boolean);
+  const overflowTarget = card.querySelector('[data-overflow="output_group"]')?.value.trim();
+  if (overflowTarget) routes.push(overflowTarget);
   const inputNames = new Set(contacts().map(([name]) => name.toLocaleLowerCase()));
   const invalid = routes.find(value => inputNames.has(value.toLocaleLowerCase()));
   if (invalid) { alert(`“${invalid}” is an input group, not an output destination. Select its output group or paste its @g.us JID.`); return; }
@@ -272,6 +277,10 @@ function saveGroup(card) {
     group.Director.all_fast_forward = card.querySelector('[data-director="all_fast_forward"]').value.trim();
     group.reply_settings ||= {};
     card.querySelectorAll('[data-reply]').forEach(input => { group.reply_settings[input.dataset.reply] = input.checked; });
+    if (group.LD === 100) {
+      group.overflow_limits ||= {};
+      card.querySelectorAll('[data-overflow]').forEach(input => { group.overflow_limits[input.dataset.overflow] = input.dataset.overflow === 'output_group' ? input.value.trim() : Number(input.value || 0); });
+    }
     card.querySelectorAll('.override-row').forEach(row => {
       const market = row.dataset.market;
       group.Director.market_overrides[market] = {
@@ -417,7 +426,7 @@ $('#marketEditor').addEventListener('click',event=>{
 ['#addGroup','#addGroupSecondary'].forEach(id=>{const node=$(id);if(node)node.addEventListener('click',()=>{prepareGroupDialog();$('#groupDialog').showModal();});});
 $('#addMarket').addEventListener('click',()=>$('#marketDialog').showModal());
 document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$('#'+button.dataset.close).close()));
-$('#groupForm').addEventListener('submit',event=>{event.preventDefault();const d=new FormData(event.currentTarget);const name=String(d.get('name')).trim();if(!name)return;mutate(next=>{next.in_contacts ||= {};next.in_contacts[name]={LD:Number(d.get('ld')||100),Limit:Number(d.get('limit')||0),instant_cutting:d.get('instant')==='on',reply_settings:{normal_ok:true,fast_forward_ok:true,total_ok:true},Director:{all_table:String(d.get('allTable')||'').trim(),all_fast_forward:String(d.get('allForward')||'').trim(),market_overrides:{}},win_rate:{ANK:Number(d.get('ank')||0),Jodi:Number(d.get('jodi')||0),SP:Number(d.get('sp')||0),DP:Number(d.get('dp')||0),TP:Number(d.get('tp')||0),FS:Number(d.get('fs')||0),HS:Number(d.get('hs')||0),Commission:Number(d.get('commission')||0)}};});event.currentTarget.reset();$('#groupDialog').close();});
+$('#groupForm').addEventListener('submit',event=>{event.preventDefault();const d=new FormData(event.currentTarget);const name=String(d.get('name')).trim();if(!name)return;mutate(next=>{next.in_contacts ||= {};next.in_contacts[name]={LD:Number(d.get('ld')||100),Limit:Number(d.get('limit')||0),instant_cutting:d.get('instant')==='on',reply_settings:{normal_ok:true,fast_forward_ok:true,total_ok:true},overflow_limits:{output_group:'',ank:0,jodi:0,sp:0,dp:0,tp:0},Director:{all_table:String(d.get('allTable')||'').trim(),all_fast_forward:String(d.get('allForward')||'').trim(),market_overrides:{}},win_rate:{ANK:Number(d.get('ank')||0),Jodi:Number(d.get('jodi')||0),SP:Number(d.get('sp')||0),DP:Number(d.get('dp')||0),TP:Number(d.get('tp')||0),FS:Number(d.get('fs')||0),HS:Number(d.get('hs')||0),Commission:Number(d.get('commission')||0)}};});event.currentTarget.reset();$('#groupDialog').close();});
 $('#overrideForm').addEventListener('submit',event=>{event.preventDefault();const d=new FormData(event.currentTarget);const market=String(d.get('market')).trim();if(!market||!overrideTargetGroup)return;mutate(next=>{const group=next.in_contacts[overrideTargetGroup];group.Director ||= {};group.Director.market_overrides ||= {};group.Director.market_overrides[market]={table:String(d.get('table')||'').trim(),fast_forward:String(d.get('forward')||'').trim()};});event.currentTarget.reset();$('#overrideDialog').close();overrideTargetGroup='';});
 $('#marketForm').addEventListener('submit',event=>{event.preventDefault();const d=new FormData(event.currentTarget);const name=String(d.get('name')).trim();if(!name)return;mutate(next=>{next.fixed_market_time ||= {};next.fixed_market_time[name]=[{hour:Number(d.get('startHour')||0),minute:Number(d.get('startMinute')||0),second:0},Number(d.get('days')||0),{hour:Number(d.get('endHour')||0),minute:Number(d.get('endMinute')||0),second:0}];selectedMarketKey=name;});event.currentTarget.reset();$('#marketDialog').close();});
 async function chooseWorkspace(){try{const state=await window.cobo.chooseBotDirectory();log(state.botDirectory?'Project folder: '+state.botDirectory:'Project folder unchanged.');}catch(error){alert(error.message);}}

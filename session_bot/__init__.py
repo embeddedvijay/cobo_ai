@@ -132,6 +132,13 @@ class Session(Reply_processor, Scheduler):
     def is_instant_cutting(self, contact: str) -> bool:
         return bool(self.rule_for(contact).get("instant_cutting", False))
 
+    def should_send_reply(self, contact: str, reply_type: str | None) -> bool:
+        """Apply an input group's reply setting; old configs default ON."""
+        if not reply_type:
+            return True
+        settings = self.rule_for(contact).get("reply_settings", {}) or {}
+        return bool(settings.get(reply_type, True))
+
     def format_ld_table(self, market: str, result_list: list, ld_value) -> tuple[str, int, dict]:
         # Match the legacy scheduler rounding: int(amount * LD / 100).
         try:
@@ -241,6 +248,7 @@ class Session(Reply_processor, Scheduler):
 
     def process_incoming(self, text: str, contact: str, message_id: str):
         """Original Reply_processor.reply() entry point used by the FastAPI bridge."""
+        self.last_reply_type = None
         # No recognised market means no valid HLA/DB operation. It may still be
         # forwarded only when this customer's Director has one clear destination.
         from .reply_processor import format_check

@@ -161,6 +161,19 @@ class Database:
                 return str(row["jid"])
         return None
 
+    def available_output_groups(self, client_name: str, session_name: str) -> list[str]:
+        """Connected-account group names safe to offer as output destinations."""
+        rows = self.group_mappings.find(
+            {"client_name": client_name, "session_name": session_name},
+            {"group_name": 1, "roles": 1},
+        )
+        names = {
+            str(row.get("group_name")).strip()
+            for row in rows
+            if row.get("group_name") and "input" not in (row.get("roles") or [])
+        }
+        return sorted(names, key=str.casefold)
+
     def cancel_target(self, client_name: str, session_name: str, source_jid: str, quoted_message_id: str) -> dict | None:
         """Find the original input behind a WhatsApp quoted cancel command.
 

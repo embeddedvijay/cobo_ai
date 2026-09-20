@@ -22,15 +22,15 @@
     </aside>
     <main>
       <section id="dashboard" class="page">
-        <header class="dashboard-header"><div><p class="eyebrow">BUSINESS CONTROL CENTER</p><h1>Today’s workspace</h1><p class="subtitle">Customer groups, market timings and delivery activity in one place.</p></div><div class="dashboard-actions"><button class="secondary" data-goto="config">Manage settings</button><button class="primary" id="dashboardStart">▶ Start Service</button></div></header>
+        <header class="dashboard-header"><div><p class="eyebrow">BUSINESS CONTROL CENTER</p><h1>Today’s workspace</h1><p class="subtitle">Customer groups, market timings and delivery activity in one place.</p></div><div class="dashboard-actions"><button class="secondary" data-goto="config" data-goto-tab="timings">Manage settings</button><button class="primary" id="dashboardStart">▶ Start Service</button></div></header>
         <div id="metricCards" class="metric-grid crm-metrics"></div>
         <div class="crm-grid">
-          <article class="panel crm-customers"><div class="panel-title"><div><p class="eyebrow">CUSTOMERS</p><h3>Input group control</h3></div><span id="contactCount">0 active</span></div><div class="crm-columns"><span>Group</span><span>LD</span><span>Limit</span><span>Routing</span></div><div id="customerList" class="customer-list"></div><button class="quiet-action" data-goto="config">Open customer rules →</button></article>
-          <article class="panel crm-markets"><div class="panel-title"><div><p class="eyebrow">MARKETS</p><h3>Today’s timing board</h3></div><span id="marketCount">0 timings</span></div><div id="marketList" class="market-list"></div><button class="quiet-action" data-goto="config">Open market timings →</button></article>
+          <article class="panel crm-customers"><div class="panel-title"><div><p class="eyebrow">CUSTOMERS</p><h3>Input group control</h3></div><span id="contactCount">0 active</span></div><div class="crm-columns"><span>Group</span><span>LD</span><span>Limit</span><span>Routing</span></div><div id="customerList" class="customer-list"></div><button class="quiet-action" data-goto="config" data-goto-tab="groups">Open customer rules →</button></article>
+          <article class="panel crm-markets"><div class="panel-title"><div><p class="eyebrow">MARKETS</p><h3>Today’s timing board</h3></div><span id="marketCount">0 timings</span></div><div id="marketList" class="market-list"></div><button class="quiet-action" data-goto="config" data-goto-tab="timings">Open market timings →</button></article>
           <article class="panel crm-activity"><div class="panel-title"><div><p class="eyebrow">ACTIVITY</p><h3>Service activity</h3></div><span class="live-label">● LIVE</span></div><pre id="logs">Workspace is ready. Choose the workspace folder, then start the service.</pre></article>
         </div>
       </section>
-      <section id="results" class="page"><header><div><p class="eyebrow">RESULTS &amp; MARKETS</p><h1>Market view</h1></div><button class="primary" data-goto="config">Edit Timings</button></header><div class="panel empty"><h3>Live market data</h3><p>Today’s market and result details will appear here while the service is running.</p></div></section>
+      <section id="results" class="page"><header><div><p class="eyebrow">RESULTS &amp; MARKETS</p><h1>Market view</h1></div><button class="primary" data-goto="config" data-goto-tab="timings">Edit Timings</button></header><div class="panel empty"><h3>Live market data</h3><p>Today’s market and result details will appear here while the service is running.</p></div></section>
       <section id="transactions" class="page"><header><div><p class="eyebrow">TRANSACTIONS</p><h1>Customer activity</h1></div></header><div class="panel empty"><h3>Transaction history</h3><p>Saved customer entries and output records will appear here.</p></div></section>
       <section id="config" class="page active">
         <header class="premium-header">

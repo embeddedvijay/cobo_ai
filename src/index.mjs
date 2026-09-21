@@ -29,6 +29,9 @@ function debugTrace(label, fields = {}) {
   log.info(fields, label);
   try { fs.appendFileSync(debugLogPath, `${line}\n`, 'utf8'); } catch (error) { log.warn({ error: error.message }, 'debug.log write failed'); }
 }
+// Create the file immediately at service start, so `tail -f ../debug.log`
+// works before the first WhatsApp message reaches the delivery code.
+debugTrace('service started', { cwd: process.cwd(), debug_log: debugLogPath });
 let activeTasks = 0;
 const waitingTasks = [];
 

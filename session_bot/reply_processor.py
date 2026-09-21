@@ -178,10 +178,11 @@ class Reply_processor(dynamic_time_manager):
                 # The operator can independently silence only these three
                 # acknowledgement classes. Errors/cancel notices continue to
                 # be delivered so the sender is never left without feedback.
+                normal_accepted = action.startswith("✅") and action not in ("✅✅", "✅🔴")
                 self.last_reply_type = (
                     "total_ok" if flag == "amt" else
                     "fast_forward_ok" if action == "✅✅" else
-                    "normal_ok" if action == "✅" else None
+                    "normal_ok" if normal_accepted else None
                 )
                 rule = self.rule_for(contact)
                 trace(
@@ -287,7 +288,10 @@ class Reply_processor(dynamic_time_manager):
                 #     return "❌",0 
 
                     
-                elif(action == "✅"):
+                # HLA returns a plain ✅ for some formats and
+                # `✅ *Total = N*` for others. Both are accepted plays and
+                # must enter the exact same forwarding/instant/overflow path.
+                elif normal_accepted:
                     msg += action
                     data["Result"] = result_list
                     data["Total"] = total

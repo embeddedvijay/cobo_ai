@@ -222,6 +222,10 @@ class Reply_processor(dynamic_time_manager):
                     if self.is_instant_cutting(contact):
                         instant_sent = self.send_instant_table(contact, market, result_list)
                         trace(f"[PLAY TRACE] total_check delivery overflow_sent={overflow_sent} instant_sent={instant_sent}")
+                    elif overflow_sent:
+                        # The derived excess table is the only immediate
+                        # delivery for this configured 100% LD route.
+                        trace("[PLAY TRACE] total_check raw_forward_suppressed=overflow_sent")
                     else:
                         forwarded = self.forward_unparsed(contact, market, text)
                         trace(f"[PLAY TRACE] total_check delivery overflow_sent={overflow_sent} forwarded={forwarded}")
@@ -263,11 +267,10 @@ class Reply_processor(dynamic_time_manager):
                             add_data(data)
                             if data.get("dynamic_validation") is True:
                                 self.notify_limit_once(contact)
-                                if not instant:
-                                    self.forward_valid_play(contact, market, text)
-                                if self.is_instant_cutting(contact):
-                                    self.send_instant_table(contact, market, result_list)
-                                self.send_category_overflow(contact, market, result_list)
+                                instant_sent = self.send_instant_table(contact, market, result_list) if instant else False
+                                overflow_sent = self.send_category_overflow(contact, market, result_list)
+                                forwarded = self.forward_valid_play(contact, market, text) if not instant and not overflow_sent else False
+                                trace(f"[PLAY TRACE] dynamic delivery forwarded={forwarded} instant_sent={instant_sent} overflow_sent={overflow_sent}")
                             return msg,1
                         
                         else:
@@ -303,9 +306,12 @@ class Reply_processor(dynamic_time_manager):
                     data["Analysis"] = hla_analysis
                     add_data(data)
                     self.notify_limit_once(contact)
-                    forwarded = self.forward_valid_play(contact, market, text) if not instant else False
                     instant_sent = self.send_instant_table(contact, market, result_list) if instant else False
                     overflow_sent = self.send_category_overflow(contact, market, result_list)
+                    # When overflow emitted a derived excess table, do not
+                    # also leak the original play to Fast Forward. If there
+                    # is no excess, legacy Fast Forward behavior stays intact.
+                    forwarded = self.forward_valid_play(contact, market, text) if not instant and not overflow_sent else False
                     trace(f"[PLAY TRACE] accepted delivery forwarded={forwarded} instant_sent={instant_sent} overflow_sent={overflow_sent}")
                     return msg,0
                 

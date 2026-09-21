@@ -30,6 +30,10 @@ const DEFAULT_QUERY_TIMEOUT_MS = 120_000;
 const CONNECT_WATCHDOG_MS = 90_000;
 const RECONNECT_MIN_MS = 2_000;
 const RECONNECT_MAX_MS = 60_000;
+const OUTBOX_STABILITY_MS = 10_000;
+const FLAP_WINDOW_MS = 5 * 60_000;
+const CRITICAL_FLAP_COUNT = 5;
+const CRITICAL_SEND_PAUSE_MS = 5 * 60_000;
 function debugTrace(label, fields = {}) {
   const line = `${new Date().toISOString()} [NODE ${label}] ${JSON.stringify(fields)}`;
   log.info(fields, label);
@@ -117,7 +121,7 @@ async function withGlobalLimit(task) {
 const sessions = [];
 for (const client of config.clients || []) {
   for (const session of client.sessions || []) {
-    sessions.push({ client, session, input: new Map(), output: new Map(), queues: new Map(), socket: null, connecting: false, connected: false, reconnectTimer: null, reconnectAttempts: 0, connectWatchdog: null, outboxTimer: null, groupsReady: false, groupResolution: null, flushing: false, lockPath: null });
+    sessions.push({ client, session, input: new Map(), output: new Map(), queues: new Map(), socket: null, connecting: false, connected: false, connectedAt: 0, reconnectTimer: null, reconnectAttempts: 0, connectWatchdog: null, outboxTimer: null, disconnectTimes: [], deliveryPausedUntil: 0, groupsReady: false, groupResolution: null, flushing: false, lockPath: null });
   }
 }
 
@@ -142,6 +146,30 @@ function scheduleReconnect(runtime, reason) {
       scheduleReconnect(runtime, 'start_failed');
     });
   }, delay);
+}
+
+function holdOutbox(runtime) {
+  const now = Date.now();
+  if (!runtime.connected || !runtime.socket) return 'socket_not_connected';
+  if (runtime.deliveryPausedUntil > now) return 'critical_network_pause';
+  if (runtime.deliveryPausedUntil) {
+    runtime.deliveryPausedUntil = 0;
+    debugTrace('Critical network pause cleared', { session: runtime.session.session_name });
+  }
+  if (now - runtime.connectedAt < OUTBOX_STABILITY_MS) return 'connection_stabilising';
+  return '';
+}
+
+function recordDisconnect(runtime, code) {
+  const now = Date.now();
+  runtime.disconnectTimes = [...runtime.disconnectTimes, now].filter(value => now - value <= FLAP_WINDOW_MS);
+  if (runtime.disconnectTimes.length >= CRITICAL_FLAP_COUNT) {
+    runtime.deliveryPausedUntil = now + CRITICAL_SEND_PAUSE_MS;
+    debugTrace('Critical network flap: outgoing delivery safely paused', {
+      session: runtime.session.session_name, close_code: code || null,
+      disconnects_in_window: runtime.disconnectTimes.length, pause_ms: CRITICAL_SEND_PAUSE_MS,
+    });
+  }
 }
 
 function configuredInputs(runtime) {
@@ -294,6 +322,13 @@ function runSerial(runtime, jid, task) {
 
 async function sendOutbox(runtime, item) {
   if (item.channel !== 'whatsapp') return;
+  const socket = runtime.socket;
+  const holdReason = holdOutbox(runtime);
+  if (holdReason) {
+    const error = new Error(`WhatsApp delivery held: ${holdReason}`);
+    error.deliveryHeld = true;
+    throw error;
+  }
   // A normal source reply / LIMIT CHECK targets an input customer group.
   // Table and fast-forward items normally target an output group.
   const outputRequired = Boolean(item.market || item.settlement_payload);
@@ -320,7 +355,21 @@ async function sendOutbox(runtime, item) {
     throw error;
   }
   const options = item.quote ? { quoted: item.quote } : undefined;
-  const sent = await runtime.socket.sendMessage(target, { text: item.text }, options);
+  let sent;
+  try {
+    sent = await socket.sendMessage(target, { text: item.text }, options);
+  } catch (error) {
+    // After a WhatsApp send is attempted, a network/transport error cannot
+    // prove whether WhatsApp accepted it. Safety wins over auto-retry: the
+    // record becomes uncertain, never a possible duplicate game/table.
+    error.deliveryUncertain = true;
+    throw error;
+  }
+  if (runtime.socket !== socket || !runtime.connected) {
+    const error = new Error('WhatsApp connection changed after send acknowledgement');
+    error.deliveryUncertain = true;
+    throw error;
+  }
   return { sent, target, targetName: runtime.groupNames?.get(target) || item.target || target, fallback };
 }
 
@@ -328,7 +377,8 @@ async function flushOutbox(runtime) {
   // Timer, connection.open and incoming events can all request a flush. One
   // sender per linked account preserves priority/order and avoids two network
   // sends racing for the same table.
-  if (!runtime.socket || runtime.flushing) return;
+  const holdReason = holdOutbox(runtime);
+  if (holdReason || runtime.flushing) return;
   runtime.flushing = true;
   try {
     const { data } = await http.post(`/outbox/claim?client_name=${encodeURIComponent(runtime.client.client_name)}&session_name=${encodeURIComponent(runtime.session.session_name)}&limit=50`);
@@ -350,12 +400,18 @@ async function flushOutbox(runtime) {
         if (error?.invalidTarget) {
           await http.post(`/outbox/${item._id}/invalid-target?error=${encodeURIComponent(detail)}`).catch(() => undefined);
           log.error({ id: item._id, target: item.target, detail }, 'Outbox stopped: output group is not configured');
-        } else if (whatsappAccepted) {
+        } else if (whatsappAccepted || error?.deliveryUncertain) {
           // Do not set retry here. WhatsApp may already have accepted the
           // message while /delivery was unavailable. Backend restart changes
           // it to explicit `uncertain`, never a duplicate automatic send.
           await http.post(`/outbox/${item._id}/uncertain?error=${encodeURIComponent(detail)}`).catch(() => undefined);
           log.error({ id: item._id, detail }, 'Outbox send is unconfirmed; not retrying automatically');
+        } else if (error?.deliveryHeld) {
+          // This item was claimed just as the connection became unstable.
+          // Return it to the durable queue; no WhatsApp send was attempted.
+          await http.post(`/outbox/${item._id}/result?sent=false&error=${encodeURIComponent(detail)}`).catch(() => undefined);
+          debugTrace('Outbox held before WhatsApp send', { id: item._id, detail });
+          break;
         } else {
           await http.post(`/outbox/${item._id}/result?sent=false&error=${encodeURIComponent(detail)}`).catch(() => undefined);
           log.warn({ id: item._id, detail }, 'Outbox will retry before send');
@@ -409,7 +465,10 @@ async function startSession(runtime) {
     debugTrace('WhatsApp connect watchdog timeout', { session: runtime.session.session_name, timeout_ms: CONNECT_WATCHDOG_MS });
     runtime.socket = null;
     runtime.connecting = false;
+    runtime.connected = false;
+    runtime.connectedAt = 0;
     clearRuntimeTimers(runtime);
+    recordDisconnect(runtime, 'watchdog_timeout');
     try { socket.end(new Error('Cobo connection watchdog timeout')); } catch { /* socket is already closed */ }
     scheduleReconnect(runtime, 'watchdog_timeout');
   }, CONNECT_WATCHDOG_MS);
@@ -424,6 +483,7 @@ async function startSession(runtime) {
       if (runtime.socket !== socket) return;
       runtime.connecting = false;
       runtime.connected = true;
+      runtime.connectedAt = Date.now();
       runtime.reconnectAttempts = 0;
       if (runtime.connectWatchdog) clearTimeout(runtime.connectWatchdog);
       runtime.connectWatchdog = null;
@@ -440,8 +500,10 @@ async function startSession(runtime) {
       runtime.socket = null;
       runtime.connecting = false;
       runtime.connected = false;
+      runtime.connectedAt = 0;
       runtime.groupsReady = false;
       clearRuntimeTimers(runtime);
+      if (!loggedOut) recordDisconnect(runtime, code);
       if (loggedOut) { debugTrace('WhatsApp logged out', { code, auth_dir: runtime.session.auth_dir || null }); return; }
       scheduleReconnect(runtime, `close_${code || 'unknown'}`);
     }

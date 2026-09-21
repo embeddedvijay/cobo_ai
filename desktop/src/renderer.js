@@ -8,6 +8,7 @@ let overrideTargetGroup = '';
 let selectedMarketDays = new Set();
 let loadedTransactions = [];
 let loadedTransactionDetails = {};
+let loadedHisab = [];
 let dashboardMarket = '';
 let dashboardContact = '';
 let dashboardLoading = false;
@@ -25,6 +26,7 @@ function goto(page) {
   if (page === 'dashboard') loadDashboard();
   if (page === 'results') loadResults();
   if (page === 'transactions') loadTransactions();
+  if (page === 'hisab') loadHisab();
 }
 function showConfigHome() { $('#configHome').hidden = false; $('#configDetail').hidden = true; }
 function showConfigDetail(tab = 'timings') { $('#configHome').hidden = true; $('#configDetail').hidden = false; gotoTab(tab); }
@@ -459,6 +461,37 @@ async function loadTransactions() {
     $('#transactionStatus').textContent = `${data.transactions.length} message record${data.transactions.length === 1 ? '' : 's'} loaded for ${date}.`;
   } catch (error) { $('#transactionList').innerHTML = ''; $('#transactionStatus').textContent = error.message; }
 }
+function hisabCard(row) {
+  const categories = row.category_totals || {};
+  const categoryLine = [['ANK', categories.ank], ['JODI', categories.jodi], ['SP', categories.sp], ['DP', categories.dp], ['TP', categories.tp]]
+    .map(([label, value]) => `<span>${label}<b>${money(value || 0)}</b></span>`).join('');
+  const direction = Number(row.profit_loss || 0) >= 0 ? 'profit' : 'loss';
+  return `<article class="hisab-card ${direction}"><header><div><p class="eyebrow">FINAL RUN SNAPSHOT</p><h3>${esc(row.customer)}</h3><small>${esc(row.contact)}</small></div><b class="hisab-balance">Final balance ${money(row.final_balance)}</b></header><div class="hisab-totals"><span>OLD BALANCE<b>${money(row.old_balance)}</b></span><span>TOTAL PLAY<b>${money(row.total_play)}</b></span><span>TOTAL WIN<b>${money(row.total_win)}</b></span><span>COMMISSION (${esc(row.commission_rate)}%)<b>−${money(row.commission_amount)}</b></span><span class="${direction}">PROFIT / LOSS<b>${money(row.profit_loss)}</b></span></div><div class="hisab-categories">${categoryLine}</div><details><summary>View sent Run Final message</summary><pre>${esc(row.final_message)}\n\n${esc(row.message_play)}</pre></details></article>`;
+}
+function renderHisab() {
+  const rows = loadedHisab;
+  $('#hisabCount').textContent = String(rows.length);
+  $('#hisabPlay').textContent = money(rows.reduce((total, row) => total + Number(row.total_play || 0), 0));
+  const net = rows.reduce((total, row) => total + Number(row.profit_loss || 0), 0);
+  $('#hisabNet').textContent = `${net < 0 ? '−' : ''}${money(Math.abs(net))}`;
+  $('#hisabNet').classList.toggle('negative', net < 0);
+  $('#hisabList').innerHTML = rows.map(hisabCard).join('') || '<div class="empty-data">Is date ke liye Run Final snapshot nahi mila.</div>';
+}
+async function loadHisab() {
+  const date = $('#hisabDate')?.value?.trim();
+  if (!validBusinessDate(date)) { $('#hisabStatus').textContent = 'Use date format YY-MM-DD.'; return; }
+  const contact = $('#hisabContact').value;
+  $('#hisabStatus').textContent = 'Loading saved Run Final Hisab…';
+  try {
+    const data = await window.cobo.hisab({ date, contact });
+    loadedHisab = data.records || [];
+    const select = $('#hisabContact'); const previous = select.value;
+    select.innerHTML = '<option value="">All customers</option>' + (data.contacts || []).map(item => `<option value="${esc(item.value)}">${esc(item.name)}</option>`).join('');
+    select.value = (data.contacts || []).some(item => item.value === previous) ? previous : '';
+    renderHisab();
+    $('#hisabStatus').textContent = `${loadedHisab.length} customer final snapshot${loadedHisab.length === 1 ? '' : 's'} saved for ${date}.`;
+  } catch (error) { $('#hisabList').innerHTML = ''; $('#hisabStatus').textContent = error.message; }
+}
 async function saveTransaction(row) {
   const button = row.querySelector('[data-action="save-transaction"]'); button.textContent = 'Saving…';
   try { await window.cobo.saveTransaction({ date: $('#transactionDate').value.trim(), record_id: row.dataset.recordId, message: row.querySelector('[data-transaction="message"]').value, total: Number(row.querySelector('[data-transaction="total"]').value || 0) }); button.textContent = 'Saved'; }
@@ -503,6 +536,9 @@ $('#customerList').addEventListener('click',event=>{const button=event.target.cl
 $('#refreshResults').addEventListener('click',loadResults);
 $('#resultCards').addEventListener('click',event=>{const button=event.target.closest('[data-action="save-result"]');if(button)saveResult(button.closest('.result-card'));});
 $('#refreshTransactions').addEventListener('click',loadTransactions);
+$('#refreshHisab').addEventListener('click',loadHisab);
+$('#hisabContact').addEventListener('change',loadHisab);
+$('#hisabDate').addEventListener('change',loadHisab);
 $('#transactionContact').addEventListener('change',loadTransactions);
 $('#transactionBack').addEventListener('click',()=>{ $('#transactionContact').value=''; $('#transactionMarket').value=''; loadTransactions(); });
 $('#transactionDate').addEventListener('change',loadTransactions);
@@ -510,4 +546,4 @@ $('#transactionDate').addEventListener('change',loadTransactions);
 $('#transactionMarketSummary').addEventListener('click',event=>{const customer=event.target.closest('[data-transaction-contact]');if(customer){const select=$('#transactionContact');select.value=customer.dataset.transactionContact;$('#transactionMarket').value='';loadTransactions();return;}const card=event.target.closest('[data-transaction-market]');if(card){const select=$('#transactionMarket');select.value=select.value===card.dataset.transactionMarket?'':card.dataset.transactionMarket;renderTransactions();}});
 $('#transactionList').addEventListener('click',event=>{const button=event.target.closest('[data-action="save-transaction"]');if(button)saveTransaction(button.closest('.transaction-row'));});
 window.cobo.onLog(log);window.cobo.onStatus(setService);
-(async()=>{const date=todayBusinessDate();$('#resultDate').value=date;$('#transactionDate').value=date;const state=await window.cobo.state();render(state.summary);setService(state);loadOutputGroups();})();
+(async()=>{const date=todayBusinessDate();$('#resultDate').value=date;$('#transactionDate').value=date;$('#hisabDate').value=date;const state=await window.cobo.state();render(state.summary);setService(state);loadOutputGroups();})();

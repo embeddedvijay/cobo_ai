@@ -196,6 +196,92 @@ class OutputSettlementService:
             f"*TOTAL PLAY = {total_play}*",
         ])
 
+    @staticmethod
+    def _customer_rule(client_name: str, session_name: str, source_jid: str) -> tuple[str, dict]:
+        """Find the saved input-group rule even though the ledger uses the JID."""
+        contacts = find_session(client_name, session_name)["session"].get("in_contacts", {}) or {}
+        display_name = db.group_name_for_jid(client_name, session_name, source_jid) or source_jid
+        for name, rule in contacts.items():
+            if str(name) in {source_jid, display_name}:
+                return str(name), rule if isinstance(rule, dict) else {}
+        return display_name, {}
+
+    @staticmethod
+    def _customer_rates(rule: dict, client_name: str, session_name: str) -> dict:
+        fallback = settlement_service._rates(client_name, session_name)
+        configured = rule.get("win_rate", {}) if isinstance(rule, dict) else {}
+        aliases = {
+            "ank": "ANK", "jodi": "Jodi", "single_panna": "SP",
+            "double_panna": "DP", "triple_panna": "TP",
+        }
+        rates = dict(fallback)
+        for key, label in aliases.items():
+            value = configured.get(label, configured.get(key))
+            if value not in (None, ""):
+                try:
+                    rates[key] = float(value)
+                except (TypeError, ValueError):
+                    pass
+        return rates
+
+    def _hisab_total_win(self, raws: list[dict], client_name: str, session_name: str, rule: dict) -> int:
+        """Calculate a signed payout from the same accepted/cancelled rows in Final.
+
+        Negative cancel rows reduce both play and winning liability, so Hisab
+        remains correct after a normal cancel or desktop reject revision.
+        """
+        rates = self._customer_rates(rule, client_name, session_name)
+        result_cache: dict[str, dict] = {}
+        total = 0.0
+        for raw in raws:
+            transaction = db.legacy_transaction(raw)
+            if not transaction or transaction.get("Deleted") is True:
+                continue
+            base_market, side = settlement_service._market_parts(str(transaction.get("Market", "")))
+            if not base_market:
+                continue
+            result_doc = result_cache.setdefault(str(raw["business_date"]), db.result_document(str(raw["business_date"])))
+            values = settlement_service._result_values(base_market, side, result_doc)
+            if not values:
+                continue
+            for row in transaction.get("Result", []) or []:
+                if not isinstance(row, (list, tuple)) or len(row) < 2:
+                    continue
+                stake = _amount(row[-1])
+                if not stake:
+                    continue
+                candidates = [str(value).strip() for value in row[:-1] if str(value).strip().isdigit()]
+                choices = []
+                for token in candidates:
+                    if len(token) == 1 and token == values["ank"]:
+                        choices.append(("ank", token))
+                    elif len(token) == 2 and token == values["jodi"]:
+                        choices.append(("jodi", token))
+                    elif len(token) == 3 and token == values["panna"]:
+                        choices.append(({"sp": "single_panna", "dp": "double_panna", "tp": "triple_panna"}[_panna_type(token)], token))
+                if choices:
+                    kind, _token = max(choices, key=lambda item: rates[item[0]])
+                    total += stake * rates[kind]
+        return int(total)
+
+    def _save_hisab(self, client_name: str, session_name: str, source_jid: str, business_date: str, group: dict, final_message: str, message_play: str) -> None:
+        customer_name, rule = self._customer_rule(client_name, session_name, source_jid)
+        commission_rate = _amount((rule.get("win_rate", {}) or {}).get("Commission", 0))
+        total_play = _amount(group["total_play"])
+        total_win = self._hisab_total_win(group["raws"], client_name, session_name, rule)
+        commission_amount = int(total_play * commission_rate / 100)
+        # Positive is operator profit/customer debit; negative is operator loss.
+        profit_loss = total_play - total_win - commission_amount
+        db.save_hisab_snapshot({
+            "client_name": client_name, "session_name": session_name,
+            "source_jid": source_jid, "customer_name": customer_name,
+            "business_date": business_date, "category_totals": dict(group["totals"]),
+            "message_totals": list(group["message_totals"]), "total_play": total_play,
+            "total_win": total_win, "commission_rate": commission_rate,
+            "commission_amount": commission_amount, "profit_loss": profit_loss,
+            "final_message": final_message, "message_play": message_play,
+        })
+
     def _queue_input_group_totals(self, client_name: str, session_name: str, trigger_message_id: str, icons: dict, limit: int, business_date: str) -> dict:
         """Queue one end-total per input group, based only on that group's plays.
 
@@ -241,12 +327,15 @@ class OutputSettlementService:
                 for raw in reserved:
                     db.release_settlement(raw["_id"])
                 continue
+            final_message = self._input_group_total(business_date, group["totals"], group["total_play"], icons)
+            message_play = self._input_group_message_play(business_date, group["message_totals"], group["total_play"])
+            self._save_hisab(client_name, session_name, source_jid, business_date, group, final_message, message_play)
             db.enqueue({
                 "client_name": client_name,
                 "session_name": session_name,
                 "channel": "whatsapp",
                 "target": source_jid,
-                "text": self._input_group_total(business_date, group["totals"], group["total_play"], icons),
+                "text": final_message,
                 "quote": None,
                 "kind": "settlement_input_group_total",
                 "source_raw_ids": [raw["_id"] for raw in reserved],
@@ -263,7 +352,7 @@ class OutputSettlementService:
                 "session_name": session_name,
                 "channel": "whatsapp",
                 "target": source_jid,
-                "text": self._input_group_message_play(business_date, group["message_totals"], group["total_play"]),
+                "text": message_play,
                 "quote": None,
                 "kind": "settlement_input_group_message_play",
                 "dedupe_key": f"input-message-play:{source_jid}:{business_date}:{trigger_message_id}",
@@ -305,17 +394,23 @@ class OutputSettlementService:
             for category, stake in self._played_stakes(transaction):
                 totals[category] += stake
         key = f"input-revision:{source_jid}:{business_date}:{revision_id}"
+        final_message = self._input_group_total(business_date, totals, total_play, icons)
+        message_play = self._input_group_message_play(business_date, message_totals, total_play)
+        self._save_hisab(client_name, session_name, source_jid, business_date, {
+            "raws": db.input_group_rows(client_name, session_name, source_jid, business_date),
+            "totals": totals, "message_totals": message_totals, "total_play": total_play,
+        }, final_message, message_play)
         db.enqueue({
             "client_name": client_name, "session_name": session_name,
             "channel": "whatsapp", "target": source_jid,
-            "text": self._input_group_total(business_date, totals, total_play, icons),
+            "text": final_message,
             "quote": None, "kind": "settlement_input_group_total",
             "dedupe_key": key + ":total", "priority": 60, "business_date": business_date,
         })
         db.enqueue({
             "client_name": client_name, "session_name": session_name,
             "channel": "whatsapp", "target": source_jid,
-            "text": self._input_group_message_play(business_date, message_totals, total_play),
+            "text": message_play,
             "quote": None, "kind": "settlement_input_group_message_play",
             "dedupe_key": key + ":messages", "priority": 59, "business_date": business_date,
         })

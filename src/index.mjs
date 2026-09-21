@@ -165,7 +165,11 @@ async function resolveGroups(runtime) {
     session_name: runtime.session.session_name,
     mappings: [...mappings.values()],
   });
-  log.info({ session: runtime.session.session_name, inputs: runtime.input.size, outputs: runtime.output.size }, 'Groups resolved');
+  debugTrace('Groups resolved', {
+    session: runtime.session.session_name,
+    inputs: [...runtime.input.entries()].map(([jid, name]) => ({ jid, name })),
+    outputs: [...runtime.output.entries()].map(([name, jid]) => ({ name, jid })),
+  });
 }
 
 async function ensureGroups(runtime) {
@@ -313,22 +317,24 @@ async function startSession(runtime) {
   socket.ev.on('creds.update', saveCreds);
   socket.ev.on('connection.update', async update => {
     const { connection, lastDisconnect, qr } = update;
+    const closeCode = connection === 'close' ? new Boom(lastDisconnect?.error)?.output?.statusCode : null;
+    debugTrace('connection update', { session: runtime.session.session_name, connection: connection || null, close_code: closeCode, qr_received: Boolean(qr) });
     if (qr) qrcode.generate(qr, { small: true });
     if (connection === 'open') {
       runtime.reconnecting = false;
       runtime.groupsReady = false;
-      log.info({ session: runtime.session.session_name }, 'WhatsApp connected');
+      debugTrace('WhatsApp connected', { session: runtime.session.session_name });
       try { await ensureGroups(runtime); await flushOutbox(runtime); } catch (error) { log.error(error, 'Initial group/outbox setup failed'); }
       return;
     }
     if (connection === 'close') {
-      const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
+      const code = closeCode;
       const loggedOut = code === DisconnectReason.loggedOut;
       runtime.socket = null;
-      if (loggedOut) { log.error('Logged out: delete only this auth_dir and scan QR again'); return; }
+      if (loggedOut) { debugTrace('WhatsApp logged out', { code, auth_dir: runtime.session.auth_dir || null }); return; }
       if (!runtime.reconnecting) {
         runtime.reconnecting = true;
-        log.warn({ code }, 'Connection closed; reconnecting');
+        debugTrace('WhatsApp reconnect scheduled', { code, delay_ms: Number(wa.reconnect_delay_ms || 2500) });
         await sleep(Number(wa.reconnect_delay_ms || 2500));
         startSession(runtime).catch(error => log.error(error, 'Reconnect failed'));
       }
@@ -336,17 +342,27 @@ async function startSession(runtime) {
   });
 
   socket.ev.on('messages.upsert', ({ messages, type }) => {
-    if (!['notify', 'append'].includes(type)) return;
+    debugTrace('messages upsert', { type, count: messages?.length || 0 });
+    if (!['notify', 'append'].includes(type)) {
+      debugTrace('messages ignored', { reason: 'unsupported_upsert_type', type });
+      return;
+    }
     for (const message of messages) {
       const jid = message.key?.remoteJid;
       const text = textOf(message);
-      if (!jid || message.key?.fromMe || jid === 'status@broadcast' || !text) continue;
+      if (!jid || message.key?.fromMe || jid === 'status@broadcast' || !text) {
+        debugTrace('messages ignored', {
+          reason: !jid ? 'missing_jid' : message.key?.fromMe ? 'from_me' : jid === 'status@broadcast' ? 'status_broadcast' : 'empty_text',
+          jid: jid || null, id: message.key?.id || null,
+        });
+        continue;
+      }
       runSerial(runtime, jid, () => withGlobalLimit(async () => {
         // Offline messages can arrive immediately after connection.open. Wait for
         // group name -> JID resolution instead of dropping them during startup.
         await ensureGroups(runtime);
         if (runtime.input.has(jid)) {
-          log.info({ jid, id: message.key.id, text: text.slice(0, 80) }, 'Incoming');
+          debugTrace('Incoming accepted', { jid, source_name: runtime.input.get(jid), id: message.key.id, text: text.slice(0, 120) });
           const quote = quoteOf(message);
           await http.post('/incoming', {
             client_name: runtime.client.client_name, session_name: runtime.session.session_name,
@@ -355,7 +371,7 @@ async function startSession(runtime) {
             text, message_timestamp: timestampOf(message), raw_message: message, ...quote,
           });
         } else if ([...runtime.output.values()].includes(jid) && text.trim().toLowerCase() === String(runtime.session.processing?.trigger_contains || 'last').trim().toLowerCase()) {
-          log.info({ jid, id: message.key.id }, 'Output settlement trigger');
+          debugTrace('Output settlement trigger', { jid, id: message.key.id, text: text.slice(0, 120) });
           await http.post('/settlement/output-trigger', {
             client_name: runtime.client.client_name,
             session_name: runtime.session.session_name,
@@ -364,10 +380,16 @@ async function startSession(runtime) {
             text,
           });
         } else {
+          debugTrace('Incoming ignored', {
+            reason: 'jid_not_configured_as_input_or_output_trigger', jid, id: message.key.id,
+            text: text.slice(0, 120), configured_inputs: [...runtime.input.entries()], configured_outputs: [...runtime.output.entries()],
+          });
           return;
         }
         await flushOutbox(runtime);
-      })).catch(error => log.error({ jid, error: error.message }, 'Incoming processing failed'));
+      })).catch(error => {
+        debugTrace('Incoming processing failed', { jid, error: error.message });
+      });
     }
   });
 

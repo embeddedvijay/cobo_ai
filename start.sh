@@ -20,10 +20,29 @@ fi
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 BACKEND_PORT="${BACKEND_PORT:-8015}"
+PID_FILE="$ROOT_DIR/.cobo-service.pids"
+
+# A previous Electron window can be force-closed before its children notice.
+# Clean only PIDs whose current directory is this exact Cobo project; never
+# use broad `pkill node` / `pkill uvicorn`, which could stop Boss/Nikku.
+stop_stale_cobo_processes() {
+  [[ -f "$PID_FILE" ]] || return 0
+  while IFS= read -r pid; do
+    [[ "$pid" =~ ^[0-9]+$ ]] || continue
+    [[ "$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)" == "$ROOT_DIR" ]] || continue
+    kill -TERM "$pid" 2>/dev/null || true
+  done < "$PID_FILE"
+  rm -f "$PID_FILE"
+  sleep 1
+}
+
+stop_stale_cobo_processes
 
 cleanup() {
   trap - INT TERM EXIT
+  [[ -n "${NODE_PID:-}" ]] && kill "$NODE_PID" 2>/dev/null || true
   [[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null || true
+  rm -f "$PID_FILE"
 }
 trap cleanup INT TERM EXIT
 
@@ -35,4 +54,7 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 curl -fsS "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null
-node src/index.mjs
+node "$ROOT_DIR/src/index.mjs" &
+NODE_PID=$!
+printf '%s\n%s\n' "$BACKEND_PID" "$NODE_PID" > "$PID_FILE"
+wait "$NODE_PID"

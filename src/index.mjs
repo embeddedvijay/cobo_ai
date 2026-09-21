@@ -33,11 +33,32 @@ const RECONNECT_MAX_MS = 60_000;
 const OUTBOX_STABILITY_MS = 10_000;
 const FLAP_WINDOW_MS = 5 * 60_000;
 const CRITICAL_FLAP_COUNT = 5;
-const CRITICAL_SEND_PAUSE_MS = 5 * 60_000;
+const CRITICAL_SEND_PAUSE_MS = 2 * 60_000;
+const DEBUG_RETENTION_DAYS = 7;
+let nextDebugMaintenanceAt = 0;
+function debugDay(value = new Date()) { return value.toISOString().slice(0, 10); }
+function rotateDebugLog() {
+  try {
+    if (Date.now() < nextDebugMaintenanceAt) return;
+    nextDebugMaintenanceAt = Date.now() + 60_000;
+    if (fs.existsSync(debugLogPath)) {
+      const stat = fs.statSync(debugLogPath);
+      const fileDay = debugDay(stat.mtime);
+      const today = debugDay();
+      if (fileDay !== today) fs.renameSync(debugLogPath, path.join(root, `debug.log.${fileDay}`));
+    }
+    const cutoff = Date.now() - DEBUG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    for (const name of fs.readdirSync(root)) {
+      if (!/^debug\.log\.\d{4}-\d{2}-\d{2}$/.test(name)) continue;
+      const target = path.join(root, name);
+      if (fs.statSync(target).mtimeMs < cutoff) fs.unlinkSync(target);
+    }
+  } catch (error) { log.warn({ error: error.message }, 'debug.log rotation failed'); }
+}
 function debugTrace(label, fields = {}) {
   const line = `${new Date().toISOString()} [NODE ${label}] ${JSON.stringify(fields)}`;
   log.info(fields, label);
-  try { fs.appendFileSync(debugLogPath, `${line}\n`, 'utf8'); } catch (error) { log.warn({ error: error.message }, 'debug.log write failed'); }
+  try { rotateDebugLog(); fs.appendFileSync(debugLogPath, `${line}\n`, 'utf8'); } catch (error) { log.warn({ error: error.message }, 'debug.log write failed'); }
 }
 // Create the file immediately at service start, so `tail -f ../debug.log`
 // works before the first WhatsApp message reaches the delivery code.
@@ -121,7 +142,7 @@ async function withGlobalLimit(task) {
 const sessions = [];
 for (const client of config.clients || []) {
   for (const session of client.sessions || []) {
-    sessions.push({ client, session, input: new Map(), output: new Map(), queues: new Map(), socket: null, connecting: false, connected: false, connectedAt: 0, reconnectTimer: null, reconnectAttempts: 0, connectWatchdog: null, outboxTimer: null, disconnectTimes: [], deliveryPausedUntil: 0, groupsReady: false, groupResolution: null, flushing: false, lockPath: null });
+    sessions.push({ client, session, input: new Map(), output: new Map(), queues: new Map(), socket: null, connecting: false, connected: false, connectedAt: 0, reconnectTimer: null, reconnectAttempts: 0, connectWatchdog: null, outboxTimer: null, disconnectTimes: [], deliveryPausedUntil: 0, lastHoldReason: '', groupsReady: false, groupResolution: null, flushing: false, lockPath: null });
   }
 }
 
@@ -357,6 +378,7 @@ async function sendOutbox(runtime, item) {
   const options = item.quote ? { quoted: item.quote } : undefined;
   let sent;
   try {
+    debugTrace('Outbox WhatsApp send attempt', { id: item._id, target, target_name: runtime.groupNames?.get(target) || item.target, priority: item.priority, text_length: String(item.text || '').length });
     sent = await socket.sendMessage(target, { text: item.text }, options);
   } catch (error) {
     // After a WhatsApp send is attempted, a network/transport error cannot
@@ -378,7 +400,17 @@ async function flushOutbox(runtime) {
   // sender per linked account preserves priority/order and avoids two network
   // sends racing for the same table.
   const holdReason = holdOutbox(runtime);
-  if (holdReason || runtime.flushing) return;
+  if (holdReason || runtime.flushing) {
+    if (holdReason && runtime.lastHoldReason !== holdReason) {
+      runtime.lastHoldReason = holdReason;
+      debugTrace('Outbox delivery held', { session: runtime.session.session_name, reason: holdReason, pause_until: runtime.deliveryPausedUntil ? new Date(runtime.deliveryPausedUntil).toISOString() : null });
+    }
+    return;
+  }
+  if (runtime.lastHoldReason) {
+    debugTrace('Outbox delivery resumed', { session: runtime.session.session_name, previous_reason: runtime.lastHoldReason });
+    runtime.lastHoldReason = '';
+  }
   runtime.flushing = true;
   try {
     const { data } = await http.post(`/outbox/claim?client_name=${encodeURIComponent(runtime.client.client_name)}&session_name=${encodeURIComponent(runtime.session.session_name)}&limit=50`);
@@ -405,6 +437,7 @@ async function flushOutbox(runtime) {
           // message while /delivery was unavailable. Backend restart changes
           // it to explicit `uncertain`, never a duplicate automatic send.
           await http.post(`/outbox/${item._id}/uncertain?error=${encodeURIComponent(detail)}`).catch(() => undefined);
+          debugTrace('Outbox marked uncertain', { id: item._id, target: item.target, detail });
           log.error({ id: item._id, detail }, 'Outbox send is unconfirmed; not retrying automatically');
         } else if (error?.deliveryHeld) {
           // This item was claimed just as the connection became unstable.
@@ -414,6 +447,7 @@ async function flushOutbox(runtime) {
           break;
         } else {
           await http.post(`/outbox/${item._id}/result?sent=false&error=${encodeURIComponent(detail)}`).catch(() => undefined);
+          debugTrace('Outbox safe retry before WhatsApp send', { id: item._id, target: item.target, detail });
           log.warn({ id: item._id, detail }, 'Outbox will retry before send');
         }
       }

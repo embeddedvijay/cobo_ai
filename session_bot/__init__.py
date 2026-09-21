@@ -15,6 +15,7 @@ from .reply_processor import Reply_processor
 from .schedule_task import Scheduler
 from .startup_time_verification import verify_time
 from .runtime_config import custom_market_timings
+from .debug_log import trace
 
 
 def _contact_name(value: str) -> str:
@@ -170,11 +171,15 @@ class Session(Reply_processor, Scheduler):
         input group's play, LD table, or final-total accounting.
         """
         rule = self.rule_for(contact)
-        if self._whole_amount(rule.get("LD", 100)) != 100:
+        ld = self._whole_amount(rule.get("LD", 100))
+        trace(f"[OVERFLOW] start contact={contact} market={market} ld={ld} rows={result_list!r}")
+        if ld != 100:
+            trace(f"[OVERFLOW] skip contact={contact} reason=ld_not_100 ld={ld}")
             return False
         settings = rule.get("overflow_limits", {}) or {}
         target = str(settings.get("output_group") or "").strip()
         if not target:
+            trace(f"[OVERFLOW] skip contact={contact} reason=no_output_group settings={settings!r}")
             return False
         rows, total = [], 0
         for row in result_list or []:
@@ -183,6 +188,7 @@ class Session(Reply_processor, Scheduler):
             kind = self._play_kind(row)
             limit = self._whole_amount(settings.get(kind or "", 0))
             amount = self._whole_amount(row[-1])
+            trace(f"[OVERFLOW] row={row!r} kind={kind} amount={amount} limit={limit}")
             if not kind or limit <= 0 or amount <= limit:
                 continue
             excess = amount - limit
@@ -190,10 +196,13 @@ class Session(Reply_processor, Scheduler):
             rows.append(f"*{key}={excess}*")
             total += excess
         if total <= 0:
+            trace(f"[OVERFLOW] skip contact={contact} reason=no_line_above_limit target={target}")
             return False
+        text = "\n".join([f"*{market}*", *rows, f"*TOTAL={total}*"])
+        trace(f"[OVERFLOW] queue contact={contact} target={target} total={total} text={text!r}")
         self.send_message_to(
             target,
-            "\n".join([f"*{market}*", *rows, f"*TOTAL={total}*" ]),
+            text,
             market=market,
             # Higher than an instant LD table (100): excess must leave first.
             priority=110,
@@ -258,12 +267,15 @@ class Session(Reply_processor, Scheduler):
 
     def send_instant_table(self, contact: str, market: str, result_list: list) -> bool:
         target = self.director_target(contact, market, "table") or self.director_target(contact, market, "fast_forward")
+        trace(f"[INSTANT] start contact={contact} market={market} ld={self.rule_for(contact).get('LD', 100)!r} target={target!r} rows={result_list!r}")
         if not target:
             print(f"No Table or Fast Forward destination for {contact}/{market}; immediate LD table skipped", flush=True)
             return False
         text, total, bets = self.format_ld_table(market, result_list, self.rule_for(contact).get("LD", 100))
         if total <= 0:
+            trace(f"[INSTANT] skip contact={contact} reason=empty_ld_table")
             return False
+        trace(f"[INSTANT] queue contact={contact} target={target} total={total} bets={bets!r}")
         self.send_message_to(
             target, text, market=market,
             settlement_payload={"bets": bets, "total_play": total, "source_contact": contact},
@@ -287,6 +299,7 @@ class Session(Reply_processor, Scheduler):
         """Legacy forward/table/play/win output -> durable Baileys outbox."""
         targets = number if isinstance(number, list) else [number]
         for target in targets:
+            trace(f"[OUTBOX QUEUE] target={target!r} market={market!r} priority={priority} settlement={bool(settlement_payload)} text={str(message)[:220]!r}")
             self.outbox_callback(
                 str(target), self.clean_me(str(message)), kind="legacy_output",
                 market=market, settlement_payload=settlement_payload,

@@ -15,6 +15,7 @@ hla_calculate = hla(debug=False).run
 
 from .dynamic_time_manager import dynamic_time_manager
 from .dynamic_handler import dynamic_validator,format_conversion
+from .debug_log import trace
 
 #HLA = hla(debug=False).run
 
@@ -182,6 +183,13 @@ class Reply_processor(dynamic_time_manager):
                     "fast_forward_ok" if action == "✅✅" else
                     "normal_ok" if action == "✅" else None
                 )
+                rule = self.rule_for(contact)
+                trace(
+                    f"[PLAY TRACE] contact={contact} market={market} action={action!r} flag={flag!r} "
+                    f"result={result_list!r} total={locals().get('total')!r} "
+                    f"ld={rule.get('LD', 100)!r} instant={self.is_instant_cutting(contact)} "
+                    f"overflow={rule.get('overflow_limits', {})!r}",
+                )
 
                 
                 if('CL' in market):
@@ -206,14 +214,16 @@ class Reply_processor(dynamic_time_manager):
                     # game rows. LD=100 category overflow is independent of
                     # the acknowledgement type, so do not lose its instant
                     # excess route because this branch returns early.
-                    self.send_category_overflow(contact, market, result_list)
+                    overflow_sent = self.send_category_overflow(contact, market, result_list)
                     # Instant Cutting never forwards raw source text. It must
                     # still send the calculated LD table when the HLA asks
                     # the customer to use/confirm its calculated total.
                     if self.is_instant_cutting(contact):
-                        self.send_instant_table(contact, market, result_list)
+                        instant_sent = self.send_instant_table(contact, market, result_list)
+                        trace(f"[PLAY TRACE] total_check delivery overflow_sent={overflow_sent} instant_sent={instant_sent}")
                     else:
-                        self.forward_unparsed(contact, market, text)
+                        forwarded = self.forward_unparsed(contact, market, text)
+                        trace(f"[PLAY TRACE] total_check delivery overflow_sent={overflow_sent} forwarded={forwarded}")
                     return msg,1
                 
                 elif( action == "✅✅"):
@@ -289,11 +299,10 @@ class Reply_processor(dynamic_time_manager):
                     data["Analysis"] = hla_analysis
                     add_data(data)
                     self.notify_limit_once(contact)
-                    if not instant:
-                        self.forward_valid_play(contact, market, text)
-                    if instant:
-                        self.send_instant_table(contact, market, result_list)
-                    self.send_category_overflow(contact, market, result_list)
+                    forwarded = self.forward_valid_play(contact, market, text) if not instant else False
+                    instant_sent = self.send_instant_table(contact, market, result_list) if instant else False
+                    overflow_sent = self.send_category_overflow(contact, market, result_list)
+                    trace(f"[PLAY TRACE] accepted delivery forwarded={forwarded} instant_sent={instant_sent} overflow_sent={overflow_sent}")
                     return msg,0
                 
                 elif(action == "✅🔴"):

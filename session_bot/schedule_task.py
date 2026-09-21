@@ -80,7 +80,12 @@ class Scheduler:
             return
         #self.send_message_to("My Airtel",f"No Open Result found for Market {market[:-3]}\n Please ADD under 10 Minutes..")
 
-    def send_table(self,client_name,market,master_contact,per = 100, customer_contacts=None)->bool:
+    def send_table_legacy(self,client_name,market,master_contact,per = 100, customer_contacts=None)->bool:
+        """Original conversion-based table builder retained for reference only.
+
+        Scheduler jobs call the new send_table() below. Do not delete this
+        legacy version: it documents the earlier OP/CL Jodi/Sangam behavior.
+        """
         # Director creates one table per output group. A customer contributes
         # only to the group selected for this market, never to another group's
         # table. Recursive calls reuse the original legacy table formatter.
@@ -88,7 +93,7 @@ class Scheduler:
         if customer_contacts is None and routes:
             sent = False
             for target, contacts in routes.items():
-                sent = self.send_table(client_name, market, target, per, customer_contacts=contacts) or sent
+                sent = self.send_table_legacy(client_name, market, target, per, customer_contacts=contacts) or sent
             return sent
 
         customers = list(customer_contacts or self.customer_contacts)
@@ -119,10 +124,22 @@ class Scheduler:
         sum = 0
         panna_sum = 0
         close_jodi = ''
-        # Keep OP games in their original category after LD cutting.  For
-        # example, 45=120 at 70% is sent as 45=84, never converted to 4=84.
-        # CL retains its separate open-jodi/sangam settlement conversion.
-        if '_CL' in market:
+        if '_OP' in market:
+            jodis = []
+            for val,price in data.items():
+                if len(val)==2 and price>0:
+                    initital_amt = int(data.get(val[0],0))
+                    data[val[0]] = initital_amt + int(price)
+                    jodis.append(val)
+                elif '-' in val and price>0:
+                    _in_op = val.split('-')[0]
+                    initital_amt = int(data.get(_in_op,0))
+                    data[_in_op] = initital_amt + int(price)
+                    jodis.append(val)
+            for val in jodis:
+                del data[val]
+
+        elif '_CL' in market:
             data_open = {key:0 for key in main_num_list}
             for contact in customers:
                 contact_per = contact_cutting.get(contact,100)/100
@@ -200,6 +217,47 @@ class Scheduler:
                 pass
 
         # self.send_table_web(client_name,market,master_contact,per)
+        return True
+
+    def send_table(self, client_name, market, master_contact, per=100, customer_contacts=None) -> bool:
+        """New direct DB table: customer LD cut, but never game conversion.
+
+        `45=120` with LD 70 is therefore sent as `45=84` for both OP and CL.
+        Original game keys, including Jodi and Sangam keys, remain untouched.
+        """
+        routes = self.table_routes_for_market(market)
+        if customer_contacts is None and routes:
+            sent = False
+            for target, contacts in routes.items():
+                sent = self.send_table(client_name, market, target, per, customer_contacts=contacts) or sent
+            return sent
+
+        customers = list(customer_contacts or self.customer_contacts)
+        data = {}
+        contact_cutting = get_contact_cutting(client_name=self.client_name)
+        for contact in customers:
+            contact_per = contact_cutting.get(contact, 100) / 100
+            # This is the same DB read/settle point as the old function. Only
+            # the OP/CL number conversion below it has been removed.
+            cdata = get_client_table(client_name, market, contact_name=contact, to_settle=True)
+            for key, value in cdata.items():
+                amount = int(int(value) * contact_per)
+                if amount:
+                    data[str(key)] = data.get(str(key), 0) + amount
+
+        market_name = market
+        if ("TIME" in market) or ("MAIN" in market):
+            market_name = market_name.replace("DAY", "") if "DAY" in market else market_name.replace("NIGHT", "")
+        rows = [(key, amount) for key, amount in data.items() if amount > 0]
+        total = sum(amount for _key, amount in rows)
+        message = "\n".join([f"*{market_name}*", *[f"*{key}={amount}*" for key, amount in rows], f"*TOTAL={total}*"])
+        print(f"\t{market} Direct DB {client_name}->{master_contact}\n{message}")
+        if total > 0:
+            self.send_message_to(
+                master_contact, message, market=market,
+                settlement_payload={"bets": dict(rows), "total_play": total},
+                priority=100, business_date=get_business_date(),
+            )
         return True
     
     def send_table_web(self,client_name,market,master_contact,per = 100)->bool:

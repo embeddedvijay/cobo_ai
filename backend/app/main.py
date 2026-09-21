@@ -4,6 +4,7 @@ from bson import ObjectId
 from fastapi import FastAPI, Header, HTTPException, Query
 from datetime import datetime
 import re
+import traceback
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from .legacy_engine import engine
 from .output_settlement_service import output_settlement_service
 from .settlement_service import settlement_service
 from .settings import bridge_secret, find_session
+from session_bot.debug_log import trace
 
 app = FastAPI(title="Dust Legacy Operations + Baileys Bridge")
 
@@ -390,7 +392,14 @@ def run_pending(client_name: str, session_name: str, source_jid: str | None = No
             outcome = engine.process_one(raw)
             counts[outcome["status"]] += 1
         except Exception as exc:
-            db.mark_raw(raw["_id"], "error", error=str(exc))
+            trace(
+                f"[BACKEND ERROR] incoming message_id={raw.get('message_id')} source={raw.get('source_name')} "
+                f"error={exc!r}\n{traceback.format_exc()}"
+            )
+            try:
+                db.mark_raw(raw["_id"], "error", error=str(exc))
+            except Exception as mark_exc:
+                trace(f"[BACKEND ERROR] mark_raw failed message_id={raw.get('message_id')} error={mark_exc!r}")
             counts["errors"] += 1
             print(f"Legacy processor error for {raw['message_id']}: {exc}", flush=True)
     return counts

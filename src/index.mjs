@@ -24,6 +24,12 @@ const headers = secret ? { 'X-Bridge-Secret': secret } : {};
 const http = axios.create({ baseURL: backendUrl, timeout: 30_000, headers });
 const log = P({ level: process.env.LOG_LEVEL || 'info' });
 const debugLogPath = path.join(root, 'debug.log');
+const KEEP_ALIVE_INTERVAL_MS = 25_000;
+const CONNECT_TIMEOUT_MS = 60_000;
+const DEFAULT_QUERY_TIMEOUT_MS = 120_000;
+const CONNECT_WATCHDOG_MS = 90_000;
+const RECONNECT_MIN_MS = 2_000;
+const RECONNECT_MAX_MS = 60_000;
 function debugTrace(label, fields = {}) {
   const line = `${new Date().toISOString()} [NODE ${label}] ${JSON.stringify(fields)}`;
   log.info(fields, label);
@@ -31,15 +37,13 @@ function debugTrace(label, fields = {}) {
 }
 // Create the file immediately at service start, so `tail -f ../debug.log`
 // works before the first WhatsApp message reaches the delivery code.
-debugTrace('service started', { cwd: process.cwd(), debug_log: debugLogPath });
+debugTrace('service started', { cwd: process.cwd(), debug_log: debugLogPath, keep_alive_ms: KEEP_ALIVE_INTERVAL_MS, connect_timeout_ms: CONNECT_TIMEOUT_MS, query_timeout_ms: DEFAULT_QUERY_TIMEOUT_MS, connect_watchdog_ms: CONNECT_WATCHDOG_MS });
 let activeTasks = 0;
 const waitingTasks = [];
 
 const normalise = value => String(value || '').normalize('NFKC').replace(/\s+/g, ' ').trim();
 const isJid = value => /@(g\.us|newsletter|s\.whatsapp\.net|lid)$/.test(String(value));
 const contactName = value => normalise(String(value).split('^', 1)[0]);
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
 function processIsAlive(pid) {
   try { process.kill(Number(pid), 0); return true; } catch { return false; }
 }
@@ -113,8 +117,31 @@ async function withGlobalLimit(task) {
 const sessions = [];
 for (const client of config.clients || []) {
   for (const session of client.sessions || []) {
-    sessions.push({ client, session, input: new Map(), output: new Map(), queues: new Map(), socket: null, reconnecting: false, groupsReady: false, groupResolution: null, flushing: false, lockPath: null });
+    sessions.push({ client, session, input: new Map(), output: new Map(), queues: new Map(), socket: null, connecting: false, connected: false, reconnectTimer: null, reconnectAttempts: 0, connectWatchdog: null, outboxTimer: null, groupsReady: false, groupResolution: null, flushing: false, lockPath: null });
   }
+}
+
+function clearRuntimeTimers(runtime) {
+  if (runtime.connectWatchdog) clearTimeout(runtime.connectWatchdog);
+  runtime.connectWatchdog = null;
+  if (runtime.outboxTimer) clearInterval(runtime.outboxTimer);
+  runtime.outboxTimer = null;
+}
+
+function scheduleReconnect(runtime, reason) {
+  if (runtime.reconnectTimer || runtime.socket || runtime.connecting) return;
+  const attempt = runtime.reconnectAttempts;
+  const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * (2 ** Math.min(attempt, 5)));
+  runtime.reconnectAttempts += 1;
+  debugTrace('WhatsApp reconnect scheduled', { session: runtime.session.session_name, reason, attempt: attempt + 1, delay_ms: delay });
+  runtime.reconnectTimer = setTimeout(() => {
+    runtime.reconnectTimer = null;
+    startSession(runtime).catch(error => {
+      runtime.connecting = false;
+      debugTrace('WhatsApp reconnect start failed', { session: runtime.session.session_name, error: error.message });
+      scheduleReconnect(runtime, 'start_failed');
+    });
+  }, delay);
 }
 
 function configuredInputs(runtime) {
@@ -341,6 +368,13 @@ async function flushOutbox(runtime) {
 }
 
 async function startSession(runtime) {
+  // One runtime/socket per linked WhatsApp auth. This protects the sender-key
+  // store and prevents a 440 reconnect storm from duplicate local sockets.
+  if (runtime.connecting || runtime.socket || runtime.reconnectTimer) {
+    debugTrace('WhatsApp start ignored', { session: runtime.session.session_name, connecting: runtime.connecting, has_socket: Boolean(runtime.socket), reconnect_pending: Boolean(runtime.reconnectTimer) });
+    return;
+  }
+  runtime.connecting = true;
   // One auth state belongs to exactly one WhatsApp linked device. Multi-session
   // installs automatically get separate subfolders unless explicitly overridden.
   const defaultAuth = sessions.length === 1 ? (wa.auth_dir || './auth_info/default') : path.join(wa.auth_dir || './auth_info', runtime.session.session_name);
@@ -348,13 +382,37 @@ async function startSession(runtime) {
   try {
     acquireSessionLock(runtime, authDir);
   } catch (error) {
+    runtime.connecting = false;
     debugTrace('WhatsApp session not started', { session: runtime.session.session_name, auth_dir: authDir, error: error.message, code: error.code || null });
     return;
   }
-  const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const { version } = await fetchLatestBaileysVersion();
-  const socket = makeWASocket({ version, auth: state, logger: log.child({ session: runtime.session.session_name }), markOnlineOnConnect: true, syncFullHistory: false, generateHighQualityLinkPreview: false });
+  let state; let saveCreds; let version;
+  try {
+    ({ state, saveCreds } = await useMultiFileAuthState(authDir));
+    ({ version } = await fetchLatestBaileysVersion());
+  } catch (error) {
+    runtime.connecting = false;
+    debugTrace('WhatsApp startup preparation failed', { session: runtime.session.session_name, error: error.message });
+    scheduleReconnect(runtime, 'startup_preparation_failed');
+    return;
+  }
+  const socket = makeWASocket({
+    version, auth: state, logger: log.child({ session: runtime.session.session_name }),
+    markOnlineOnConnect: true, syncFullHistory: false, generateHighQualityLinkPreview: false,
+    fireInitQueries: false, keepAliveIntervalMs: KEEP_ALIVE_INTERVAL_MS,
+    connectTimeoutMs: CONNECT_TIMEOUT_MS, defaultQueryTimeoutMs: DEFAULT_QUERY_TIMEOUT_MS,
+  });
   runtime.socket = socket;
+  runtime.connected = false;
+  runtime.connectWatchdog = setTimeout(() => {
+    if (runtime.socket !== socket || runtime.connected) return;
+    debugTrace('WhatsApp connect watchdog timeout', { session: runtime.session.session_name, timeout_ms: CONNECT_WATCHDOG_MS });
+    runtime.socket = null;
+    runtime.connecting = false;
+    clearRuntimeTimers(runtime);
+    try { socket.end(new Error('Cobo connection watchdog timeout')); } catch { /* socket is already closed */ }
+    scheduleReconnect(runtime, 'watchdog_timeout');
+  }, CONNECT_WATCHDOG_MS);
 
   socket.ev.on('creds.update', saveCreds);
   socket.ev.on('connection.update', async update => {
@@ -363,23 +421,29 @@ async function startSession(runtime) {
     debugTrace('connection update', { session: runtime.session.session_name, connection: connection || null, close_code: closeCode, qr_received: Boolean(qr) });
     if (qr) qrcode.generate(qr, { small: true });
     if (connection === 'open') {
-      runtime.reconnecting = false;
+      if (runtime.socket !== socket) return;
+      runtime.connecting = false;
+      runtime.connected = true;
+      runtime.reconnectAttempts = 0;
+      if (runtime.connectWatchdog) clearTimeout(runtime.connectWatchdog);
+      runtime.connectWatchdog = null;
       runtime.groupsReady = false;
       debugTrace('WhatsApp connected', { session: runtime.session.session_name });
       try { await ensureGroups(runtime); await flushOutbox(runtime); } catch (error) { log.error(error, 'Initial group/outbox setup failed'); }
       return;
     }
     if (connection === 'close') {
+      // A prior watchdog/socket must never tear down its newer reconnect.
+      if (runtime.socket !== socket) return;
       const code = closeCode;
       const loggedOut = code === DisconnectReason.loggedOut;
       runtime.socket = null;
+      runtime.connecting = false;
+      runtime.connected = false;
+      runtime.groupsReady = false;
+      clearRuntimeTimers(runtime);
       if (loggedOut) { debugTrace('WhatsApp logged out', { code, auth_dir: runtime.session.auth_dir || null }); return; }
-      if (!runtime.reconnecting) {
-        runtime.reconnecting = true;
-        debugTrace('WhatsApp reconnect scheduled', { code, delay_ms: Number(wa.reconnect_delay_ms || 2500) });
-        await sleep(Number(wa.reconnect_delay_ms || 2500));
-        startSession(runtime).catch(error => log.error(error, 'Reconnect failed'));
-      }
+      scheduleReconnect(runtime, `close_${code || 'unknown'}`);
     }
   });
 
@@ -439,8 +503,9 @@ async function startSession(runtime) {
   });
 
   // Persistent outbox makes scheduler/restart delivery reliable without polling WhatsApp.
-  const timer = setInterval(() => flushOutbox(runtime).catch(error => log.debug(error, 'Outbox unavailable')), Number(wa.outbox_poll_ms || 500));
-  socket.ev.on('connection.update', update => { if (update.connection === 'close' && runtime.socket !== socket) clearInterval(timer); });
+  runtime.outboxTimer = setInterval(() => {
+    if (runtime.socket === socket && runtime.connected) flushOutbox(runtime).catch(error => log.debug(error, 'Outbox unavailable'));
+  }, Number(wa.outbox_poll_ms || 500));
 }
 
 for (const runtime of sessions) startSession(runtime).catch(error => log.error(error, 'Session failed to start'));

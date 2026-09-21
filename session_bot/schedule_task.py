@@ -5,6 +5,7 @@ from datetime import datetime,timedelta
 from .hla_adv.constants.number import main_num_list
 import datetime as dtt
 from .config import get_contacts,get_contacts_table
+from .debug_log import trace
 
 
 import builtins
@@ -23,6 +24,7 @@ class Scheduler:
         # print(contact_cutting)
 
         self.scheduler = BackgroundScheduler()
+        trace(f"[SCHEDULER] init client={self.client_name} table_routes={bool(self.out_contacts.get('table', False))} markets={len(self.markets_time)}")
         if self.out_contacts.get('table',False):
             for market,(start,dt,market_time) in self.markets_time.items():
                 if(datetime.now().weekday()<=dt):
@@ -38,6 +40,7 @@ class Scheduler:
                             args = [self.client_name,market,self.out_contacts['table'][market],per],
                             misfire_grace_time=60,coalesce=True
                         )
+                        trace(f"[SCHEDULER] registered market={market} at={time.isoformat()} target={self.out_contacts['table'][market]!r}")
                     if '_CL' in market:
                         open_result_check_time  = temp_time - timedelta(minutes=10)
                         self.scheduler.add_job(
@@ -46,6 +49,7 @@ class Scheduler:
                             args = [market],
                             misfire_grace_time=60,coalesce=True
                         )
+                        trace(f"[SCHEDULER] registered dynamic market={market} at={time.isoformat()} target={self.out_contacts['table'][market]!r}")
             for market,(start,dt,market_time) in self.dynamic_market_time.items():
                 if(datetime.now().weekday()<=dt):
                     temp_time = datetime.combine(dtt.date.today(), market_time)
@@ -70,6 +74,7 @@ class Scheduler:
                         )
 
         self.scheduler.start()
+        trace(f"[SCHEDULER] started client={self.client_name} jobs={len(self.scheduler.get_jobs())}")
         #self.scheduler.remove_all_jobs()
         #self.show_jobs()
         return
@@ -226,6 +231,7 @@ class Scheduler:
         Original game keys, including Jodi and Sangam keys, remain untouched.
         """
         routes = self.table_routes_for_market(market)
+        trace(f"[SCHEDULER] fire client={client_name} market={market} requested_target={master_contact!r} routes={routes!r}")
         if customer_contacts is None and routes:
             sent = False
             for target, contacts in routes.items():
@@ -250,6 +256,7 @@ class Scheduler:
             market_name = market_name.replace("DAY", "") if "DAY" in market else market_name.replace("NIGHT", "")
         rows = [(key, amount) for key, amount in data.items() if amount > 0]
         total = sum(amount for _key, amount in rows)
+        trace(f"[SCHEDULER] table client={client_name} market={market} target={master_contact!r} customers={customers!r} rows={rows!r} total={total}")
         message = "\n".join([f"*{market_name}*", *[f"*{key}={amount}*" for key, amount in rows], f"*TOTAL={total}*"])
         print(f"\t{market} Direct DB {client_name}->{master_contact}\n{message}")
         if total > 0:

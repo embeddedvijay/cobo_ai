@@ -354,12 +354,14 @@ def desktop_final_options(client_name: str = Query(""), session_name: str = Quer
 def desktop_run_final(payload: ManualFinalRequest):
     """Manual equivalent of the output-group `last` trigger from Dashboard."""
     output_name = payload.output_group.strip()
+    trace(f"[RUN FINAL] desktop request client={payload.client_name} session={payload.session_name} output_name={output_name!r}")
     if output_name not in configured_output_groups(payload.client_name, payload.session_name):
         raise HTTPException(status_code=422, detail="Select a configured output group")
     output_jid = output_name if output_name.endswith("@g.us") else db.group_jid_for_name(
         payload.client_name, payload.session_name, output_name
     )
     if not output_jid:
+        trace(f"[RUN FINAL] desktop blocked unresolved output_name={output_name!r}")
         raise HTTPException(status_code=409, detail="Output group is not resolved yet. Start the service once, then retry.")
     trigger_id = f"desktop-final:{db.date}:{output_jid}"
     return api_response(output_settlement_service.queue_group(

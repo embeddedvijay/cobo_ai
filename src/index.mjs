@@ -23,6 +23,12 @@ const secret = process.env.BRIDGE_SECRET || '';
 const headers = secret ? { 'X-Bridge-Secret': secret } : {};
 const http = axios.create({ baseURL: backendUrl, timeout: 30_000, headers });
 const log = P({ level: process.env.LOG_LEVEL || 'info' });
+const debugLogPath = path.join(root, 'debug.log');
+function debugTrace(label, fields = {}) {
+  const line = `${new Date().toISOString()} [NODE ${label}] ${JSON.stringify(fields)}`;
+  log.info(fields, label);
+  try { fs.appendFileSync(debugLogPath, `${line}\n`, 'utf8'); } catch (error) { log.warn({ error: error.message }, 'debug.log write failed'); }
+}
 let activeTasks = 0;
 const waitingTasks = [];
 
@@ -224,6 +230,12 @@ async function sendOutbox(runtime, item) {
   const configuredInputTarget = [...runtime.input.entries()]
     .find(([, name]) => normalise(name).toLowerCase() === normalise(item.target).toLowerCase())?.[0];
   let target = runtime.output.get(normalise(item.target)) || (!outputRequired ? configuredInputTarget : null) || (isJid(item.target) ? item.target : null);
+  debugTrace('Outbox route trace', {
+    id: item._id, requested_target: item.target, market: item.market || null,
+    priority: item.priority, output_required: outputRequired,
+    output_names: [...runtime.output.keys()], input_names: [...runtime.input.values()],
+    resolved_target: target || null,
+  }, 'Outbox route trace');
   let fallback = false;
   // Old legacy files often contain a symbolic route such as ALL_MARKET while
   // the desktop has successfully resolved exactly one real output group. Use

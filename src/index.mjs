@@ -388,7 +388,10 @@ async function startSession(runtime) {
         }
         await flushOutbox(runtime);
       })).catch(error => {
-        debugTrace('Incoming processing failed', { jid, error: error.message });
+        debugTrace('Incoming processing failed', {
+          jid, error: error.message, status: error.response?.status || null,
+          response: error.response?.data || null,
+        });
       });
     }
   });

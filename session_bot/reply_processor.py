@@ -207,7 +207,13 @@ class Reply_processor(dynamic_time_manager):
                     # the acknowledgement type, so do not lose its instant
                     # excess route because this branch returns early.
                     self.send_category_overflow(contact, market, result_list)
-                    self.forward_unparsed(contact, market, text)
+                    # Instant Cutting never forwards raw source text. It must
+                    # still send the calculated LD table when the HLA asks
+                    # the customer to use/confirm its calculated total.
+                    if self.is_instant_cutting(contact):
+                        self.send_instant_table(contact, market, result_list)
+                    else:
+                        self.forward_unparsed(contact, market, text)
                     return msg,1
                 
                 elif( action == "✅✅"):

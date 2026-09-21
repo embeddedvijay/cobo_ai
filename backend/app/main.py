@@ -515,6 +515,36 @@ def desktop_transactions(
     }
 
 
+@app.get("/desktop/hisab")
+def desktop_hisab(
+    date: str = Query(...),
+    client_name: str = Query(""),
+    contact: str = Query(""),
+):
+    """Customer-wise statement saved when Run Final creates its WhatsApp total."""
+    desktop_collection(date)  # validate the legacy YY-MM-DD date format
+    rows = db.hisab_for_date(client_name, "_runtime", date, contact)
+    contacts = sorted({
+        (str(row.get("source_jid", "")), str(row.get("customer_name", row.get("source_jid", ""))))
+        for row in rows
+    }, key=lambda item: item[1].casefold())
+    return {
+        "date": date,
+        "contacts": [{"value": jid, "name": name} for jid, name in contacts],
+        "records": [{
+            "id": str(row.get("_id", "")), "customer": str(row.get("customer_name", row.get("source_jid", ""))),
+            "contact": str(row.get("source_jid", "")), "total_play": int(row.get("total_play", 0) or 0),
+            "total_win": int(row.get("total_win", 0) or 0), "commission_rate": int(row.get("commission_rate", 0) or 0),
+            "commission_amount": int(row.get("commission_amount", 0) or 0),
+            "profit_loss": int(row.get("profit_loss", 0) or 0), "old_balance": int(row.get("old_balance", 0) or 0),
+            "final_balance": int(row.get("final_balance", 0) or 0),
+            "category_totals": row.get("category_totals", {}), "message_totals": row.get("message_totals", []),
+            "final_message": str(row.get("final_message", "")), "message_play": str(row.get("message_play", "")),
+            "updated_at": row.get("updated_at"),
+        } for row in rows],
+    }
+
+
 @app.put("/desktop/transactions")
 def save_desktop_transaction(payload: TransactionEditorUpdate):
     from bson import ObjectId

@@ -5,6 +5,7 @@ import re
 from .database import db
 from .settings import find_session
 from .settlement_service import settlement_service
+from session_bot.debug_log import trace
 
 
 DEFAULT_ICONS = {"ank": "🔵", "sp": "🟢", "dp": "🟠", "tp": "🔴", "jodi": "🟣"}
@@ -423,6 +424,7 @@ class OutputSettlementService:
         counts = {"queued": 0, "waiting_result": 0, "group_total_queued": False}
         queued_details: list[dict] = []
         active_business_date = db.date
+        trace(f"[RUN FINAL] start client={client_name} session={session_name} output_jid={output_jid} date={active_business_date} trigger={trigger_message_id}")
         # A historical missing result must never block today's final message.
         for item in db.pending_output_settlements(client_name, session_name, output_jid, limit, business_date=active_business_date):
             if not db.reserve_output_settlement(item["_id"]):
@@ -435,6 +437,7 @@ class OutputSettlementService:
             if not values:
                 db.release_output_settlement(item["_id"])
                 counts["waiting_result"] += 1
+                trace(f"[RUN FINAL] output waiting result outbox_id={item['_id']} market={item.get('market')} date={item.get('business_date')}")
                 continue
             payload = item.get("settlement_payload") or {}
             # Prefer actual delivered text. It fixes legacy CL rows where
@@ -490,13 +493,12 @@ class OutputSettlementService:
                 "business_date": active_business_date,
             })
             counts["group_total_queued"] = True
-        # This runs after the output queue is written. Lower priority guarantees
-        # output replies and output final total go first, then one total per
-        # input group calculated from only that group's MongoDB play records.
-        if not counts["waiting_result"]:
-            counts.update(self._queue_input_group_totals(client_name, session_name, trigger_message_id, icons, limit * 10, active_business_date))
-        else:
-            counts.update({"input_group_totals_queued": 0, "input_waiting_result": 0, "input_skipped": 0})
+        # Input-group final is a played-stake statement. It must never be
+        # blocked by an output table whose market result is still missing.
+        # Output win reply/final stays safely waiting for that result, while
+        # customers still receive their date-wise total and message-wise play.
+        counts.update(self._queue_input_group_totals(client_name, session_name, trigger_message_id, icons, limit * 10, active_business_date))
+        trace(f"[RUN FINAL] queued client={client_name} output_jid={output_jid} date={active_business_date} counts={counts}")
         return counts
 
 

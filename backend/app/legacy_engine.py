@@ -5,6 +5,7 @@ import unicodedata
 import re
 
 from session_bot import Session
+from session_bot.debug_log import trace
 from session_bot.constant import cancel_strings, invalid_format_reply
 
 from .database import db
@@ -26,6 +27,10 @@ class LegacyEngine:
             meta = find_session(client_name, session_name)
 
             def outbox(target: str, text: str, *, kind: str = "legacy_output", market: str | None = None, settlement_payload: dict | None = None, priority: int = 50, business_date: str | None = None):
+                trace(
+                    f"[BACKEND OUTBOX] enqueue target={target!r} market={market!r} kind={kind} "
+                    f"priority={priority} settlement={bool(settlement_payload)} text={str(text)[:220]!r}",
+                )
                 db.enqueue({
                     "client_name": client_name, "session_name": session_name,
                     "channel": "whatsapp", "target": target, "text": text,

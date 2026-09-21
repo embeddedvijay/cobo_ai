@@ -40,6 +40,42 @@ const isJid = value => /@(g\.us|newsletter|s\.whatsapp\.net|lid)$/.test(String(v
 const contactName = value => normalise(String(value).split('^', 1)[0]);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+function processIsAlive(pid) {
+  try { process.kill(Number(pid), 0); return true; } catch { return false; }
+}
+
+function acquireSessionLock(runtime, authDir) {
+  if (runtime.lockPath) return;
+  const lockPath = path.join(authDir, '.cobo-bridge.lock');
+  fs.mkdirSync(authDir, { recursive: true });
+  try {
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }), { flag: 'wx' });
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    let previous = {};
+    try { previous = JSON.parse(fs.readFileSync(lockPath, 'utf8')); } catch { /* corrupt stale lock */ }
+    if (previous.pid && processIsAlive(previous.pid)) {
+      const duplicate = new Error(`Another Cobo bridge is already using this WhatsApp auth (PID ${previous.pid})`);
+      duplicate.code = 'COBO_AUTH_LOCKED';
+      throw duplicate;
+    }
+    fs.unlinkSync(lockPath);
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }), { flag: 'wx' });
+  }
+  runtime.lockPath = lockPath;
+  debugTrace('WhatsApp auth lock acquired', { session: runtime.session.session_name, lock_path: lockPath, pid: process.pid });
+}
+
+function releaseSessionLocks() {
+  for (const runtime of sessions) {
+    if (!runtime.lockPath) continue;
+    try {
+      const owner = JSON.parse(fs.readFileSync(runtime.lockPath, 'utf8'));
+      if (Number(owner.pid) === process.pid) fs.unlinkSync(runtime.lockPath);
+    } catch { /* lock is already gone */ }
+  }
+}
+
 // A typed destination is resolved against the account's current WhatsApp
 // groups on every connection. Keep this deliberately conservative: it exists
 // for a small spelling mistake, never to guess between similarly named groups.
@@ -77,7 +113,7 @@ async function withGlobalLimit(task) {
 const sessions = [];
 for (const client of config.clients || []) {
   for (const session of client.sessions || []) {
-    sessions.push({ client, session, input: new Map(), output: new Map(), queues: new Map(), socket: null, reconnecting: false, groupsReady: false, groupResolution: null, flushing: false });
+    sessions.push({ client, session, input: new Map(), output: new Map(), queues: new Map(), socket: null, reconnecting: false, groupsReady: false, groupResolution: null, flushing: false, lockPath: null });
   }
 }
 
@@ -309,6 +345,12 @@ async function startSession(runtime) {
   // installs automatically get separate subfolders unless explicitly overridden.
   const defaultAuth = sessions.length === 1 ? (wa.auth_dir || './auth_info/default') : path.join(wa.auth_dir || './auth_info', runtime.session.session_name);
   const authDir = path.resolve(root, runtime.session.auth_dir || defaultAuth);
+  try {
+    acquireSessionLock(runtime, authDir);
+  } catch (error) {
+    debugTrace('WhatsApp session not started', { session: runtime.session.session_name, auth_dir: authDir, error: error.message, code: error.code || null });
+    return;
+  }
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   const { version } = await fetchLatestBaileysVersion();
   const socket = makeWASocket({ version, auth: state, logger: log.child({ session: runtime.session.session_name }), markOnlineOnConnect: true, syncFullHistory: false, generateHighQualityLinkPreview: false });
@@ -403,5 +445,6 @@ async function startSession(runtime) {
 
 for (const runtime of sessions) startSession(runtime).catch(error => log.error(error, 'Session failed to start'));
 
+process.on('exit', releaseSessionLocks);
 process.on('SIGINT', () => process.exit(0));
 process.on('SIGTERM', () => process.exit(0));

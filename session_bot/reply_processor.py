@@ -202,6 +202,11 @@ class Reply_processor(dynamic_time_manager):
 
                 if(flag == 'amt'):
                     msg += "✅✅"
+                    # A missing/wrong total can still contain fully parsed
+                    # game rows. LD=100 category overflow is independent of
+                    # the acknowledgement type, so do not lose its instant
+                    # excess route because this branch returns early.
+                    self.send_category_overflow(contact, market, result_list)
                     self.forward_unparsed(contact, market, text)
                     return msg,1
                 

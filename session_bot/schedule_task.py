@@ -119,22 +119,10 @@ class Scheduler:
         sum = 0
         panna_sum = 0
         close_jodi = ''
-        if '_OP' in market:
-            jodis = []
-            for val,price in data.items():
-                if len(val)==2 and price>0:
-                    initital_amt = int(data.get(val[0],0))
-                    data[val[0]] = initital_amt + int(price)
-                    jodis.append(val)
-                elif '-' in val and price>0:
-                    _in_op = val.split('-')[0]
-                    initital_amt = int(data.get(_in_op,0))
-                    data[_in_op] = initital_amt + int(price)
-                    jodis.append(val)
-            for val in jodis:
-                del data[val]
-
-        elif '_CL' in market:
+        # Keep OP games in their original category after LD cutting.  For
+        # example, 45=120 at 70% is sent as 45=84, never converted to 4=84.
+        # CL retains its separate open-jodi/sangam settlement conversion.
+        if '_CL' in market:
             data_open = {key:0 for key in main_num_list}
             for contact in customers:
                 contact_per = contact_cutting.get(contact,100)/100
@@ -240,17 +228,7 @@ class Scheduler:
             sum = 0
             panna_sum = 0
             close_jodi = ''
-            if '_OP' in market:
-                jodis = []
-                for val,price in data.items():
-                    if len(val)==2 and price>0:
-                        initital_amt = int(data.get(val[0],0))
-                        data[val[0]] = initital_amt + int(price)
-                        jodis.append(val)
-                for val in jodis:
-                    del data[val]
-
-            elif '_CL' in market:
+            if '_CL' in market:
                 data_open = {key:0 for key in main_num_list}
                 for contact in customer_contacts:
                     contact_per = contact_cutting.get(contact,100)/100
@@ -305,4 +283,3 @@ class Scheduler:
     def show_jobs(self)->None:
         for job in self.scheduler.get_jobs():
           print(job)
-

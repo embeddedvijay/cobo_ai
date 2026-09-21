@@ -311,6 +311,11 @@ ipcMain.handle('desktop:transactions', (_event, { date, contact = '' }) => {
   const { config } = loadConfig(state.configPath);
   return desktopApi(`/desktop/transactions?date=${encodeURIComponent(date)}&client_name=${encodeURIComponent(config.client_name || '')}&contact=${encodeURIComponent(contact)}`);
 });
+ipcMain.handle('desktop:hisab', (_event, { date, contact = '' }) => {
+  const state = ensureWorkspaceConfig();
+  const { config } = loadConfig(state.configPath);
+  return desktopApi(`/desktop/hisab?date=${encodeURIComponent(date)}&client_name=${encodeURIComponent(config.client_name || '')}&contact=${encodeURIComponent(contact)}`);
+});
 ipcMain.handle('desktop:save-transaction', (_event, payload) => desktopApi('/desktop/transactions', { method: 'PUT', body: JSON.stringify(payload) }));
 ipcMain.handle('desktop:reject-transaction', (_event, payload) => desktopApi('/desktop/transactions/reject', { method: 'POST', body: JSON.stringify(payload) }));
 ipcMain.handle('bot:choose-directory', async () => {

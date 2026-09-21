@@ -41,6 +41,11 @@ class Database:
         # Same Market/<YY-MM-DD> collection used by the legacy project.
         return self.db[self.date]
 
+    @property
+    def hisab(self):
+        """Immutable-per-day customer final snapshots created by Run Final."""
+        return self.db["customer_hisab"]
+
     def ensure_indexes(self) -> None:
         self.raw.create_index([("client_name", ASCENDING), ("session_name", ASCENDING), ("source_jid", ASCENDING), ("message_id", ASCENDING)], unique=True)
         self.raw.create_index([("state", ASCENDING), ("source_jid", ASCENDING), ("message_timestamp", ASCENDING), ("received_at", ASCENDING)])
@@ -59,6 +64,11 @@ class Database:
             unique=True,
         )
         self.transactions.create_index([("Client", ASCENDING), ("Contact", ASCENDING), ("Market", ASCENDING), ("Total", ASCENDING)])
+        self.hisab.create_index(
+            [("client_name", ASCENDING), ("session_name", ASCENDING), ("source_jid", ASCENDING), ("business_date", ASCENDING)],
+            unique=True,
+        )
+        self.hisab.create_index([("client_name", ASCENDING), ("session_name", ASCENDING), ("business_date_iso", ASCENDING)])
 
         # A process kill can leave these transient states behind. The original
         # message/key is durable, so safe restart is to retry them, never drop them.
@@ -423,6 +433,55 @@ class Database:
 
     def add_transaction(self, document: dict) -> None:
         self.transactions.insert_one(document)
+
+    @staticmethod
+    def _business_date_iso(value: str) -> str:
+        """Turn legacy YY-MM-DD into a sortable ISO day without changing legacy data."""
+        try:
+            return datetime.strptime(str(value), "%y-%m-%d").strftime("%Y-%m-%d")
+        except ValueError:
+            return str(value)
+
+    def save_hisab_snapshot(self, snapshot: dict) -> dict:
+        """Save one customer's Run Final statement, replacing only that same day.
+
+        Keeping the first old_balance on revisions means a reject/correction
+        changes today's figures but never starts a second running balance.
+        """
+        selector = {
+            "client_name": snapshot["client_name"], "session_name": snapshot["session_name"],
+            "source_jid": snapshot["source_jid"], "business_date": snapshot["business_date"],
+        }
+        existing = self.hisab.find_one(selector, {"old_balance": 1})
+        def as_amount(value) -> int:
+            try:
+                return int(float(str(value)))
+            except (TypeError, ValueError):
+                return 0
+
+        if existing:
+            snapshot["old_balance"] = as_amount(existing.get("old_balance"))
+        else:
+            previous = self.hisab.find_one(
+                {
+                    "client_name": snapshot["client_name"], "session_name": snapshot["session_name"],
+                    "source_jid": snapshot["source_jid"],
+                    "business_date_iso": {"$lt": self._business_date_iso(snapshot["business_date"])},
+                },
+                sort=[("business_date_iso", -1)],
+            )
+            snapshot["old_balance"] = as_amount((previous or {}).get("final_balance"))
+        snapshot["business_date_iso"] = self._business_date_iso(snapshot["business_date"])
+        snapshot["final_balance"] = as_amount(snapshot["old_balance"]) + as_amount(snapshot.get("profit_loss"))
+        snapshot["updated_at"] = datetime.utcnow()
+        self.hisab.update_one(selector, {"$set": snapshot, "$setOnInsert": {"created_at": datetime.utcnow()}}, upsert=True)
+        return self.hisab.find_one(selector) or snapshot
+
+    def hisab_for_date(self, client_name: str, session_name: str, business_date: str, source_jid: str = "") -> list[dict]:
+        query = {"client_name": client_name, "session_name": session_name, "business_date": business_date}
+        if source_jid:
+            query["source_jid"] = source_jid
+        return list(self.hisab.find(query).sort([("customer_name", ASCENDING), ("source_jid", ASCENDING)]))
 
     def enqueue(self, message: dict) -> None:
         message.update({

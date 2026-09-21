@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('cobo', {
   results: date => ipcRenderer.invoke('desktop:results', date),
   saveResult: payload => ipcRenderer.invoke('desktop:save-result', payload),
   transactions: payload => ipcRenderer.invoke('desktop:transactions', payload),
+  hisab: payload => ipcRenderer.invoke('desktop:hisab', payload),
   saveTransaction: payload => ipcRenderer.invoke('desktop:save-transaction', payload),
   rejectTransaction: payload => ipcRenderer.invoke('desktop:reject-transaction', payload),
   chooseBotDirectory: () => ipcRenderer.invoke('bot:choose-directory'),

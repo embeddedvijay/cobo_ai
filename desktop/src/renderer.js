@@ -185,11 +185,12 @@ async function loadFinalOptions() {
 async function runFinalSettlement() {
   const select = $('#finalOutputGroup'); const output_group = select.value;
   if (!output_group) { alert('Select output group first.'); return; }
-  if (!window.confirm(`Run final settlement for ${output_group}? Output replies and linked input-group totals will be sent.`)) return;
+  if (!window.confirm(`Run final settlement for ${output_group}? All selected-output replies and its group total will be sent first; input-group finals will follow.`)) return;
   const button = $('#runFinal'); button.disabled = true; button.textContent = 'Queueing…';
   try {
     const result = await window.cobo.runFinal({ output_group });
-    alert(`Final queued: ${result.queued || 0} output replies, ${result.input_group_totals_queued || 0} input-group totals.`);
+    if (result.input_phase_held) alert(`Selected output group is not complete: ${result.waiting_result || 0} table result pending. Input-group finals are safely held. Add the result, then Run Final for ${output_group} again.`);
+    else alert(`Final queued in order: ${result.queued || 0} output replies, group total, then ${result.input_group_totals_queued || 0} input-group totals.`);
   } catch (error) { alert(error.message); }
   finally { button.disabled = false; button.textContent = 'Run Final'; }
 }

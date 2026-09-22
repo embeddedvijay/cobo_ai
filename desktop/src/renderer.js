@@ -189,7 +189,7 @@ async function runFinalSettlement() {
   const button = $('#runFinal'); button.disabled = true; button.textContent = 'Queueing…';
   try {
     const result = await window.cobo.runFinal({ output_group });
-    if (result.input_phase_held) alert(`Selected output group is not complete: ${result.waiting_result || 0} table result pending. Input-group finals are safely held. Add the result, then Run Final for ${output_group} again.`);
+    if (result.waiting_result) alert(`Final queued: ${result.queued || 0} ready output replies go first, then ${result.input_group_totals_queued || 0} input-group Hisab totals. ${result.waiting_result} output table result is still pending; run Final again after adding that result.`);
     else alert(`Final queued in order: ${result.queued || 0} output replies, group total, then ${result.input_group_totals_queued || 0} input-group totals.`);
   } catch (error) { alert(error.message); }
   finally { button.disabled = false; button.textContent = 'Run Final'; }

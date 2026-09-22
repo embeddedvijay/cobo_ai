@@ -163,6 +163,18 @@ class Session(Reply_processor, Scheduler):
             return "tp" if unique == 1 else "dp" if unique == 2 else "sp"
         return None
 
+    @staticmethod
+    def _forward_table_row(row, amount: int) -> str:
+        """Render an LD/overflow row clearly without changing its stored bet key.
+
+        Legacy input rows use ``=`` between all number tokens.  On a forwarded
+        table that is ambiguous with the final amount, so number tokens are
+        shown with ``-`` and the amount gets the rupee marker.  Callers keep
+        their original ``=``-joined key for settlement payloads and DB logic.
+        """
+        numbers = "-".join(str(part).strip() for part in row[:-1])
+        return f"*{numbers}={amount}₹*"
+
     def send_category_overflow(self, contact: str, market: str, result_list: list) -> bool:
         """Instantly route only a 100%-LD group's per-line excess play.
 
@@ -192,8 +204,7 @@ class Session(Reply_processor, Scheduler):
             if not kind or limit <= 0 or amount <= limit:
                 continue
             excess = amount - limit
-            key = "=".join(str(part) for part in row[:-1])
-            rows.append(f"*{key}={excess}*")
+            rows.append(self._forward_table_row(row, excess))
             total += excess
         if total <= 0:
             trace(f"[OVERFLOW] skip contact={contact} reason=no_line_above_limit target={target}")
@@ -228,7 +239,7 @@ class Session(Reply_processor, Scheduler):
             if cut <= 0:
                 continue
             key = "=".join(str(part) for part in row[:-1])
-            rows.append(f"*{key}={cut}*")
+            rows.append(self._forward_table_row(row, cut))
             bets[key] = bets.get(key, 0) + cut
             total += cut
         return "\n".join([f"*{market}*", *rows, f"*TOTAL={total}*"]), total, bets

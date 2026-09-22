@@ -418,6 +418,15 @@ class OutputSettlementService:
         return True
 
     def queue_group(self, client_name: str, session_name: str, output_jid: str, trigger_message_id: str, limit: int = 1000) -> dict:
+        """Queue one selected output group completely before any input final.
+
+        A dashboard Run Final is deliberately two-phase: every eligible table
+        reply for the selected output group, then its group total, then input
+        group totals.  If even one table is missing its Result, phase two is
+        held rather than sending customer totals in the middle of that output
+        group's final run.  Nothing is lost: the pending rows remain reserved
+        as pending and the operator can run the same selected group again.
+        """
         processing = find_session(client_name, session_name)["session"].get("processing", {})
         icons = {**DEFAULT_ICONS, **(processing.get("settlement_icons", {}) or {})}
         result_cache: dict[str, dict] = {}
@@ -493,11 +502,23 @@ class OutputSettlementService:
                 "business_date": active_business_date,
             })
             counts["group_total_queued"] = True
-        # Input-group final is a played-stake statement. It must never be
-        # blocked by an output table whose market result is still missing.
-        # Output win reply/final stays safely waiting for that result, while
-        # customers still receive their date-wise total and message-wise play.
-        counts.update(self._queue_input_group_totals(client_name, session_name, trigger_message_id, icons, limit * 10, active_business_date))
+        # Do not move to input groups halfway through this selected output
+        # group.  This makes a 20-table final run appear as one uninterrupted
+        # output settlement, followed only then by the customer statements.
+        if counts["waiting_result"]:
+            counts.update({
+                "input_group_totals_queued": 0,
+                "input_waiting_result": 0,
+                "input_skipped": 0,
+                "input_phase_held": True,
+            })
+            trace(
+                f"[RUN FINAL] input phase held client={client_name} output_jid={output_jid} "
+                f"waiting_result={counts['waiting_result']}"
+            )
+        else:
+            counts.update(self._queue_input_group_totals(client_name, session_name, trigger_message_id, icons, limit * 10, active_business_date))
+            counts["input_phase_held"] = False
         trace(f"[RUN FINAL] queued client={client_name} output_jid={output_jid} date={active_business_date} counts={counts}")
         return counts
 

@@ -172,17 +172,25 @@ class OutputSettlementService:
         ])
 
     @staticmethod
-    def _input_group_total(business_date: str, totals: dict, total_play: int, icons: dict) -> str:
-        """The single final message for one input WhatsApp group."""
+    def _input_group_total(business_date: str, totals: dict, total_play: int, icons: dict, hisab: dict | None = None) -> str:
+        """One date-wise WhatsApp Hisab statement for an input group."""
         year, month, day = business_date.split("-")
+        hisab = hisab or {}
+        commission_rate = _amount(hisab.get("commission_rate"))
         return "\n".join([
             f"*DATE: {day}-{month}-{year}*",
+            "*FINAL HISAB*",
             f"{icons['ank']} *TOTAL ANK = {totals['ank']}*",
             f"{icons['sp']} *TOTAL SP = {totals['sp']}*",
             f"{icons['jodi']} *TOTAL JODI = {totals['jodi']}*",
             f"{icons['dp']} *TOTAL DP = {totals['dp']}*",
             f"{icons['tp']} *TOTAL TP = {totals['tp']}*",
+            f"*TOTAL WIN = {_amount(hisab.get('total_win'))}*",
             f"*TOTAL PLAY = {total_play}*",
+            f"*OLD BALANCE = {_amount(hisab.get('old_balance'))}*",
+            f"*COMMISSION ({commission_rate}%) = {_amount(hisab.get('commission_amount'))}*",
+            f"*PROFIT / LOSS = {_amount(hisab.get('profit_loss'))}*",
+            f"*FINAL BALANCE = {_amount(hisab.get('final_balance'))}*",
         ])
 
     @staticmethod
@@ -265,7 +273,8 @@ class OutputSettlementService:
                     total += stake * rates[kind]
         return int(total)
 
-    def _save_hisab(self, client_name: str, session_name: str, source_jid: str, business_date: str, group: dict, final_message: str, message_play: str) -> None:
+    def _save_hisab(self, client_name: str, session_name: str, source_jid: str, business_date: str, group: dict, final_message: str, message_play: str) -> dict:
+        """Persist and return the one date-wise calculation used by UI and WhatsApp."""
         customer_name, rule = self._customer_rule(client_name, session_name, source_jid)
         commission_rate = _amount((rule.get("win_rate", {}) or {}).get("Commission", 0))
         total_play = _amount(group["total_play"])
@@ -273,7 +282,7 @@ class OutputSettlementService:
         commission_amount = int(total_play * commission_rate / 100)
         # Positive is operator profit/customer debit; negative is operator loss.
         profit_loss = total_play - total_win - commission_amount
-        db.save_hisab_snapshot({
+        return db.save_hisab_snapshot({
             "client_name": client_name, "session_name": session_name,
             "source_jid": source_jid, "customer_name": customer_name,
             "business_date": business_date, "category_totals": dict(group["totals"]),
@@ -328,8 +337,11 @@ class OutputSettlementService:
                 for raw in reserved:
                     db.release_settlement(raw["_id"])
                 continue
-            final_message = self._input_group_total(business_date, group["totals"], group["total_play"], icons)
             message_play = self._input_group_message_play(business_date, group["message_totals"], group["total_play"])
+            # Save first to obtain old/final balance, then persist that exact
+            # date-wise snapshot again with the same text sent to WhatsApp.
+            hisab = self._save_hisab(client_name, session_name, source_jid, business_date, group, "", message_play)
+            final_message = self._input_group_total(business_date, group["totals"], group["total_play"], icons, hisab)
             self._save_hisab(client_name, session_name, source_jid, business_date, group, final_message, message_play)
             db.enqueue({
                 "client_name": client_name,
@@ -395,12 +407,14 @@ class OutputSettlementService:
             for category, stake in self._played_stakes(transaction):
                 totals[category] += stake
         key = f"input-revision:{source_jid}:{business_date}:{revision_id}"
-        final_message = self._input_group_total(business_date, totals, total_play, icons)
         message_play = self._input_group_message_play(business_date, message_totals, total_play)
-        self._save_hisab(client_name, session_name, source_jid, business_date, {
+        group = {
             "raws": db.input_group_rows(client_name, session_name, source_jid, business_date),
             "totals": totals, "message_totals": message_totals, "total_play": total_play,
-        }, final_message, message_play)
+        }
+        hisab = self._save_hisab(client_name, session_name, source_jid, business_date, group, "", message_play)
+        final_message = self._input_group_total(business_date, totals, total_play, icons, hisab)
+        self._save_hisab(client_name, session_name, source_jid, business_date, group, final_message, message_play)
         db.enqueue({
             "client_name": client_name, "session_name": session_name,
             "channel": "whatsapp", "target": source_jid,

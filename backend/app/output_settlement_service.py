@@ -207,8 +207,17 @@ class OutputSettlementService:
 
     @staticmethod
     def _customer_rule(client_name: str, session_name: str, source_jid: str) -> tuple[str, dict]:
-        """Find the saved input-group rule even though the ledger uses the JID."""
-        contacts = find_session(client_name, session_name)["session"].get("in_contacts", {}) or {}
+        """Find the desktop rule; runtime in_contacts is intentionally a list."""
+        session = find_session(client_name, session_name)["session"]
+        # Electron writes display-name → rule data into contact_rules, while
+        # in_contacts remains the old legacy list ("Name ^ LD"). Reading the
+        # list as a dict caused Run Final/Hisab to fail with HTTP 500.
+        contacts = session.get("contact_rules") or {}
+        if not isinstance(contacts, dict):
+            contacts = {}
+        if not contacts:
+            legacy_contacts = session.get("in_contacts") or {}
+            contacts = legacy_contacts if isinstance(legacy_contacts, dict) else {}
         display_name = db.group_name_for_jid(client_name, session_name, source_jid) or source_jid
         for name, rule in contacts.items():
             if str(name) in {source_jid, display_name}:

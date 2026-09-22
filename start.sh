@@ -21,6 +21,7 @@ fi
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 BACKEND_PORT="${BACKEND_PORT:-8015}"
 PID_FILE="$ROOT_DIR/.cobo-service.pids"
+BACKEND_LOG="$ROOT_DIR/backend-startup.log"
 
 # A previous Electron window can be force-closed before its children notice.
 # Clean only PIDs whose current directory is this exact Cobo project; never
@@ -46,14 +47,19 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-"$PYTHON_BIN" -m uvicorn backend.app.main:app --host "${BACKEND_HOST:-127.0.0.1}" --port "$BACKEND_PORT" --no-access-log &
+: > "$BACKEND_LOG"
+"$PYTHON_BIN" -m uvicorn backend.app.main:app --host "${BACKEND_HOST:-127.0.0.1}" --port "$BACKEND_PORT" --no-access-log >> "$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
 
 for _ in $(seq 1 30); do
   curl -fsS "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null && break
   sleep 1
 done
-curl -fsS "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null
+if ! curl -fsS "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null; then
+  echo "Backend did not start on 127.0.0.1:${BACKEND_PORT}. Last backend error:"
+  tail -n 80 "$BACKEND_LOG" || true
+  exit 1
+fi
 node "$ROOT_DIR/src/index.mjs" &
 NODE_PID=$!
 printf '%s\n%s\n' "$BACKEND_PID" "$NODE_PID" > "$PID_FILE"

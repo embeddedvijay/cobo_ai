@@ -525,23 +525,18 @@ class OutputSettlementService:
                 "business_date": active_business_date,
             })
             counts["group_total_queued"] = True
-        # Do not move to input groups halfway through this selected output
-        # group.  This makes a 20-table final run appear as one uninterrupted
-        # output settlement, followed only then by the customer statements.
+        # Ready replies for the selected output group have higher priority
+        # (80) than input Hisab (60/59), so they leave first. A historical
+        # table with no result cannot be finalised yet; keep only that table
+        # pending and never block every input group because of it.
+        counts.update(self._queue_input_group_totals(client_name, session_name, trigger_message_id, icons, limit * 10, active_business_date))
+        counts["input_phase_held"] = False
+        counts["input_phase_partial_output"] = bool(counts["waiting_result"])
         if counts["waiting_result"]:
-            counts.update({
-                "input_group_totals_queued": 0,
-                "input_waiting_result": 0,
-                "input_skipped": 0,
-                "input_phase_held": True,
-            })
             trace(
-                f"[RUN FINAL] input phase held client={client_name} output_jid={output_jid} "
-                f"waiting_result={counts['waiting_result']}"
+                f"[RUN FINAL] output incomplete but input phase continues client={client_name} "
+                f"output_jid={output_jid} waiting_result={counts['waiting_result']}"
             )
-        else:
-            counts.update(self._queue_input_group_totals(client_name, session_name, trigger_message_id, icons, limit * 10, active_business_date))
-            counts["input_phase_held"] = False
         trace(f"[RUN FINAL] queued client={client_name} output_jid={output_jid} date={active_business_date} counts={counts}")
         return counts
 

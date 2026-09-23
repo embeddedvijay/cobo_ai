@@ -179,8 +179,9 @@ class Session(Reply_processor, Scheduler):
         """Instantly route only a 100%-LD group's per-line excess play.
 
         This deliberately creates a normal legacy output with no settlement
-        payload: it is a separate overflow route and must never alter the
-        input group's play, LD table, or final-total accounting.
+        payload: it is a separate overflow route. The normal scheduler keeps
+        the per-line base amount only, so this excess can never be sent again
+        in the customer's final Forward table.
         """
         rule = self.rule_for(contact)
         ld = self._whole_amount(rule.get("LD", 100))

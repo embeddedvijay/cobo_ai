@@ -150,7 +150,7 @@ class Session(Reply_processor, Scheduler):
     @staticmethod
     def _play_kind(row) -> str | None:
         """Classify one accepted HLA row without changing legacy parsing."""
-        tokens = [str(value).strip() for value in row[:-1] if str(value).strip().isdigit()]
+        tokens = Session._number_tokens(row)
         if not tokens:
             return None
         token = tokens[0]
@@ -162,6 +162,17 @@ class Session(Reply_processor, Scheduler):
             unique = len(set(token))
             return "tp" if unique == 1 else "dp" if unique == 2 else "sp"
         return None
+
+    @staticmethod
+    def _number_tokens(row) -> list[str]:
+        """Return every number covered by a parsed row.
+
+        A row such as ``1-8=1000`` means 1 has 1000 *and* 8 has 1000.
+        FM expansion follows the identical rule: all eight pannas carry the
+        stated value.  This helper deliberately does not collapse a row into
+        one game, because the scheduler stores and totals every token.
+        """
+        return [str(value).strip() for value in row[:-1] if str(value).strip().isdigit()]
 
     @staticmethod
     def _forward_table_row(row, amount: int) -> str:
@@ -205,8 +216,14 @@ class Session(Reply_processor, Scheduler):
             if not kind or limit <= 0 or amount <= limit:
                 continue
             excess = amount - limit
+            tokens = self._number_tokens(row)
+            if not tokens:
+                continue
+            # The printed grouped line remains compact (e.g. 1-8=1000₹),
+            # but that amount applies to every printed number.  Total the
+            # same atomic values that are kept in Mongo/the scheduled table.
             rows.append(self._forward_table_row(row, excess))
-            total += excess
+            total += excess * len(tokens)
         if total <= 0:
             trace(f"[OVERFLOW] skip contact={contact} reason=no_line_above_limit target={target}")
             return False
@@ -239,10 +256,16 @@ class Session(Reply_processor, Scheduler):
             cut = int(amount * rate / 100)
             if cut <= 0:
                 continue
-            key = "=".join(str(part) for part in row[:-1])
+            tokens = self._number_tokens(row)
+            if not tokens:
+                continue
             rows.append(self._forward_table_row(row, cut))
-            bets[key] = bets.get(key, 0) + cut
-            total += cut
+            # Settlement payload must also be atomic.  Keeping one composite
+            # key made a 8-panna FM line count only once (₹91 instead of
+            # 8 × ₹91) and produced the wrong Instant TOTAL.
+            for token in tokens:
+                bets[token] = bets.get(token, 0) + cut
+            total += cut * len(tokens)
         return "\n".join([f"*{market}*", *rows, f"*TOTAL={total}*"]), total, bets
 
     def forward_unparsed(self, contact: str, market: str | None, text: str) -> bool:

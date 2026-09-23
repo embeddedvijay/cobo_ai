@@ -243,9 +243,17 @@ class Scheduler:
         contact_cutting = get_contact_cutting(client_name=self.client_name)
         for contact in customers:
             contact_per = contact_cutting.get(contact, 100) / 100
+            rule = self.rule_for(contact)
+            ld = self._whole_amount(rule.get("LD", 100))
+            overflow_limits = (rule.get("overflow_limits", {}) or {}) if ld == 100 else None
+            if overflow_limits and str(overflow_limits.get("output_group") or "").strip():
+                trace(f"[SCHEDULER] overflow base-only contact={contact} market={market} limits={overflow_limits!r}")
             # This is the same DB read/settle point as the old function. Only
-            # the OP/CL number conversion below it has been removed.
-            cdata = get_client_table(client_name, market, contact_name=contact, to_settle=True)
+            # the OP/CL number conversion below it has been removed. For a
+            # 100% LD overflow customer it also excludes the excess that was
+            # already sent instantly to the separate overflow group.
+            cdata = get_client_table(client_name, market, contact_name=contact, to_settle=True,
+                                     overflow_limits=overflow_limits, overflow_ld=ld)
             for key, value in cdata.items():
                 amount = int(int(value) * contact_per)
                 if amount:

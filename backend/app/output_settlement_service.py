@@ -115,16 +115,20 @@ class OutputSettlementService:
             numbers = [str(value).strip() for value in row[:-1] if str(value).strip().isdigit()]
             if not numbers:
                 continue
-            number = numbers[0]
-            if len(number) == 1:
-                kind = "ank"
-            elif len(number) == 2:
-                kind = "jodi"
-            elif len(number) == 3:
-                kind = _panna_type(number)
-            else:
-                continue
-            played.append((kind, stake))
+            # A grouped input row carries its stated stake on *every* number:
+            # `1-8=1000` is ANK 1000 + ANK 1000, and an FM row applies to
+            # each of its eight pannas.  Category totals in the input Final
+            # must therefore use the same atomic rule as Forward/Overflow.
+            for number in numbers:
+                if len(number) == 1:
+                    kind = "ank"
+                elif len(number) == 2:
+                    kind = "jodi"
+                elif len(number) == 3:
+                    kind = _panna_type(number)
+                else:
+                    continue
+                played.append((kind, stake))
         return played
 
     @staticmethod
@@ -208,9 +212,12 @@ class OutputSettlementService:
     @staticmethod
     def _customer_rule(client_name: str, session_name: str, source_jid: str) -> tuple[str, dict]:
         """Find the saved input-group rule even though the ledger uses the JID."""
-        contacts = find_session(client_name, session_name)["session"].get("in_contacts", {}) or {}
+        session = find_session(client_name, session_name)["session"]
+        # Electron persists the complete rule object in contact_rules.  The
+        # in_contacts field is only the old `Name ^ LD` list, not a mapping.
+        contacts = session.get("contact_rules", {}) or {}
         display_name = db.group_name_for_jid(client_name, session_name, source_jid) or source_jid
-        for name, rule in contacts.items():
+        for name, rule in (contacts.items() if isinstance(contacts, dict) else []):
             if str(name) in {source_jid, display_name}:
                 return str(name), rule if isinstance(rule, dict) else {}
         return display_name, {}

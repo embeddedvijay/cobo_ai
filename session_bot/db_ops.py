@@ -120,7 +120,51 @@ def cancel_check(result_list:list,market_name:str, client_name:str,contact_name:
 
 ################################## Returns Data #######################################
 
-def get_client_table(client_name:str,market_name:str,contact_name = {"$exists":True},settled=False,to_settle= False,c_settled=False,to_csettle=False):
+def _overflow_kind(play_row):
+    """Return the same per-line category used by the instant overflow route."""
+    tokens = [str(value).strip() for value in play_row[:-1] if str(value).strip().isdigit()]
+    if not tokens:
+        return None
+    first = tokens[0]
+    if len(first) == 1:
+        return "ank"
+    if len(first) == 2:
+        return "jodi"
+    if len(first) == 3:
+        unique = len(set(first))
+        return "tp" if unique == 1 else "dp" if unique == 2 else "sp"
+    return None
+
+def _scheduled_row_amount(play_row, overflow_limits=None, overflow_ld=100):
+    """Keep only the non-overflow portion of one stored game line.
+
+    Overflow is calculated for each incoming line, not from an aggregated
+    table.  This is important: two separate `2=1000` messages must both stay
+    scheduled when the ANK limit is 1500, while one `2=5000` message leaves
+    only 1500 for the normal final table.
+    """
+    try:
+        amount = int(play_row[-1])
+    except (TypeError, ValueError, IndexError):
+        return 0
+    if int(overflow_ld or 0) != 100 or not isinstance(overflow_limits, dict):
+        return amount
+    kind = _overflow_kind(play_row)
+    try:
+        limit = max(0, int(float(str(overflow_limits.get(kind or "", 0) or 0))))
+    except (TypeError, ValueError):
+        limit = 0
+    if not kind or limit <= 0:
+        return amount
+    if amount > limit:
+        return limit
+    # A cancelled 5000 row must cancel the same scheduled base 1500; the
+    # instant overflow side remains an admin/reconciliation action.
+    if amount < -limit:
+        return -limit
+    return amount
+
+def get_client_table(client_name:str,market_name:str,contact_name = {"$exists":True},settled=False,to_settle= False,c_settled=False,to_csettle=False,overflow_limits=None,overflow_ld=100):
 
     data = _collection().aggregate([
         {
@@ -152,11 +196,12 @@ def get_client_table(client_name:str,market_name:str,contact_name = {"$exists":T
         #print(transactions)
         for sl in transactions:
             for l in sl:
+                row_amount = _scheduled_row_amount(l, overflow_limits=overflow_limits, overflow_ld=overflow_ld)
                 for n in l[:-1]:
                     if(n in list(num_dict.keys())):
-                        num_dict[n] += int(l[-1])
+                        num_dict[n] += row_amount
                     else:
-                        num_dict[n] = int(l[-1])
+                        num_dict[n] = row_amount
 
 
         if(to_settle):

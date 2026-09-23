@@ -74,10 +74,13 @@ class OutputSettlementService:
         bets: dict[str, int] = {}
         for line in cls._sent_text(message).splitlines():
             clean = line.strip().replace("*", "")
-            match = re.fullmatch(r"(\d{1,3})\s*=\s*(\d+)", clean)
+            match = re.fullmatch(r"(\d{1,3}(?:\s*-\s*\d{1,3})*)\s*=\s*(\d+)\s*₹?", clean)
             if match:
-                number, amount = match.groups()
-                bets[number] = bets.get(number, 0) + _amount(amount)
+                numbers, amount = match.groups()
+                # `1-8=1000₹` means both 1 and 8 have 1000.  This is also
+                # how FM-expanded rows are stored and how LD/overflow total.
+                for number in re.split(r"\s*-\s*", numbers):
+                    bets[number] = bets.get(number, 0) + _amount(amount)
         return bets
 
     @staticmethod
@@ -172,52 +175,40 @@ class OutputSettlementService:
         ])
 
     @staticmethod
-    def _input_group_total(business_date: str, totals: dict, total_play: int, icons: dict, hisab: dict | None = None) -> str:
-        """One date-wise WhatsApp Hisab statement for an input group."""
+    def _input_group_total(business_date: str, totals: dict, total_play: int, icons: dict) -> str:
+        """The single final message for one input WhatsApp group."""
         year, month, day = business_date.split("-")
-        hisab = hisab or {}
-        commission_rate = _amount(hisab.get("commission_rate"))
         return "\n".join([
             f"*DATE: {day}-{month}-{year}*",
-            "*FINAL HISAB*",
             f"{icons['ank']} *TOTAL ANK = {totals['ank']}*",
             f"{icons['sp']} *TOTAL SP = {totals['sp']}*",
             f"{icons['jodi']} *TOTAL JODI = {totals['jodi']}*",
             f"{icons['dp']} *TOTAL DP = {totals['dp']}*",
             f"{icons['tp']} *TOTAL TP = {totals['tp']}*",
-            f"*TOTAL WIN = {_amount(hisab.get('total_win'))}*",
             f"*TOTAL PLAY = {total_play}*",
-            f"*OLD BALANCE = {_amount(hisab.get('old_balance'))}*",
-            f"*COMMISSION ({commission_rate}%) = {_amount(hisab.get('commission_amount'))}*",
-            f"*PROFIT / LOSS = {_amount(hisab.get('profit_loss'))}*",
-            f"*FINAL BALANCE = {_amount(hisab.get('final_balance'))}*",
         ])
 
     @staticmethod
-    def _input_group_message_play(business_date: str, message_totals: list[int], total_play: int) -> str:
-        """Show the accepted play totals in the same order the group sent them."""
+    def _input_group_message_play(business_date: str, message_totals: list[int], total_play: int, totals: dict, icons: dict) -> str:
+        """End with the same category final format as an output group."""
         year, month, day = business_date.split("-")
         expression = " + ".join(str(_amount(total)) for total in message_totals)
         return "\n".join([
             f"*DATE: {day}-{month}-{year}*",
             "*MESSAGE-WISE PLAY*",
             f"{expression} = *{total_play}*",
+            f"{icons['ank']} *TOTAL ANK = {totals['ank']}*",
+            f"{icons['sp']} *TOTAL SP = {totals['sp']}*",
+            f"{icons['jodi']} *TOTAL JODI = {totals['jodi']}*",
+            f"{icons['dp']} *TOTAL DP = {totals['dp']}*",
+            f"{icons['tp']} *TOTAL TP = {totals['tp']}*",
             f"*TOTAL PLAY = {total_play}*",
         ])
 
     @staticmethod
     def _customer_rule(client_name: str, session_name: str, source_jid: str) -> tuple[str, dict]:
-        """Find the desktop rule; runtime in_contacts is intentionally a list."""
-        session = find_session(client_name, session_name)["session"]
-        # Electron writes display-name → rule data into contact_rules, while
-        # in_contacts remains the old legacy list ("Name ^ LD"). Reading the
-        # list as a dict caused Run Final/Hisab to fail with HTTP 500.
-        contacts = session.get("contact_rules") or {}
-        if not isinstance(contacts, dict):
-            contacts = {}
-        if not contacts:
-            legacy_contacts = session.get("in_contacts") or {}
-            contacts = legacy_contacts if isinstance(legacy_contacts, dict) else {}
+        """Find the saved input-group rule even though the ledger uses the JID."""
+        contacts = find_session(client_name, session_name)["session"].get("in_contacts", {}) or {}
         display_name = db.group_name_for_jid(client_name, session_name, source_jid) or source_jid
         for name, rule in contacts.items():
             if str(name) in {source_jid, display_name}:
@@ -282,8 +273,7 @@ class OutputSettlementService:
                     total += stake * rates[kind]
         return int(total)
 
-    def _save_hisab(self, client_name: str, session_name: str, source_jid: str, business_date: str, group: dict, final_message: str, message_play: str) -> dict:
-        """Persist and return the one date-wise calculation used by UI and WhatsApp."""
+    def _save_hisab(self, client_name: str, session_name: str, source_jid: str, business_date: str, group: dict, final_message: str, message_play: str) -> None:
         customer_name, rule = self._customer_rule(client_name, session_name, source_jid)
         commission_rate = _amount((rule.get("win_rate", {}) or {}).get("Commission", 0))
         total_play = _amount(group["total_play"])
@@ -291,7 +281,7 @@ class OutputSettlementService:
         commission_amount = int(total_play * commission_rate / 100)
         # Positive is operator profit/customer debit; negative is operator loss.
         profit_loss = total_play - total_win - commission_amount
-        return db.save_hisab_snapshot({
+        db.save_hisab_snapshot({
             "client_name": client_name, "session_name": session_name,
             "source_jid": source_jid, "customer_name": customer_name,
             "business_date": business_date, "category_totals": dict(group["totals"]),
@@ -346,11 +336,8 @@ class OutputSettlementService:
                 for raw in reserved:
                     db.release_settlement(raw["_id"])
                 continue
-            message_play = self._input_group_message_play(business_date, group["message_totals"], group["total_play"])
-            # Save first to obtain old/final balance, then persist that exact
-            # date-wise snapshot again with the same text sent to WhatsApp.
-            hisab = self._save_hisab(client_name, session_name, source_jid, business_date, group, "", message_play)
-            final_message = self._input_group_total(business_date, group["totals"], group["total_play"], icons, hisab)
+            final_message = self._input_group_total(business_date, group["totals"], group["total_play"], icons)
+            message_play = self._input_group_message_play(business_date, group["message_totals"], group["total_play"], group["totals"], icons)
             self._save_hisab(client_name, session_name, source_jid, business_date, group, final_message, message_play)
             db.enqueue({
                 "client_name": client_name,
@@ -416,14 +403,12 @@ class OutputSettlementService:
             for category, stake in self._played_stakes(transaction):
                 totals[category] += stake
         key = f"input-revision:{source_jid}:{business_date}:{revision_id}"
-        message_play = self._input_group_message_play(business_date, message_totals, total_play)
-        group = {
+        final_message = self._input_group_total(business_date, totals, total_play, icons)
+        message_play = self._input_group_message_play(business_date, message_totals, total_play, totals, icons)
+        self._save_hisab(client_name, session_name, source_jid, business_date, {
             "raws": db.input_group_rows(client_name, session_name, source_jid, business_date),
             "totals": totals, "message_totals": message_totals, "total_play": total_play,
-        }
-        hisab = self._save_hisab(client_name, session_name, source_jid, business_date, group, "", message_play)
-        final_message = self._input_group_total(business_date, totals, total_play, icons, hisab)
-        self._save_hisab(client_name, session_name, source_jid, business_date, group, final_message, message_play)
+        }, final_message, message_play)
         db.enqueue({
             "client_name": client_name, "session_name": session_name,
             "channel": "whatsapp", "target": source_jid,
@@ -450,7 +435,8 @@ class OutputSettlementService:
         group's final run.  Nothing is lost: the pending rows remain reserved
         as pending and the operator can run the same selected group again.
         """
-        processing = find_session(client_name, session_name)["session"].get("processing", {})
+        session = find_session(client_name, session_name)["session"]
+        processing = session.get("processing", {})
         icons = {**DEFAULT_ICONS, **(processing.get("settlement_icons", {}) or {})}
         result_cache: dict[str, dict] = {}
         counts = {"queued": 0, "waiting_result": 0, "group_total_queued": False}
@@ -458,7 +444,14 @@ class OutputSettlementService:
         active_business_date = db.date
         trace(f"[RUN FINAL] start client={client_name} session={session_name} output_jid={output_jid} date={active_business_date} trigger={trigger_message_id}")
         # A historical missing result must never block today's final message.
-        for item in db.pending_output_settlements(client_name, session_name, output_jid, limit, business_date=active_business_date):
+        overflow_jids = set()
+        for rule in (session.get("contact_rules", {}) or {}).values():
+            target = str(((rule or {}).get("overflow_limits", {}) or {}).get("output_group") or "").strip()
+            if target:
+                overflow_jids.add(target if target.endswith("@g.us") else (db.group_jid_for_name(client_name, session_name, target) or target))
+        is_overflow_output = output_jid in overflow_jids
+        trace(f"[RUN FINAL] output kind={'overflow' if is_overflow_output else 'standard'} output_jid={output_jid}")
+        for item in db.pending_output_settlements(client_name, session_name, output_jid, limit, business_date=active_business_date, include_legacy_overflow=is_overflow_output):
             if not db.reserve_output_settlement(item["_id"]):
                 continue
             base_market, side = self._market_parts(str(item["market"]))
@@ -525,18 +518,23 @@ class OutputSettlementService:
                 "business_date": active_business_date,
             })
             counts["group_total_queued"] = True
-        # Ready replies for the selected output group have higher priority
-        # (80) than input Hisab (60/59), so they leave first. A historical
-        # table with no result cannot be finalised yet; keep only that table
-        # pending and never block every input group because of it.
-        counts.update(self._queue_input_group_totals(client_name, session_name, trigger_message_id, icons, limit * 10, active_business_date))
-        counts["input_phase_held"] = False
-        counts["input_phase_partial_output"] = bool(counts["waiting_result"])
+        # Do not move to input groups halfway through this selected output
+        # group.  This makes a 20-table final run appear as one uninterrupted
+        # output settlement, followed only then by the customer statements.
         if counts["waiting_result"]:
+            counts.update({
+                "input_group_totals_queued": 0,
+                "input_waiting_result": 0,
+                "input_skipped": 0,
+                "input_phase_held": True,
+            })
             trace(
-                f"[RUN FINAL] output incomplete but input phase continues client={client_name} "
-                f"output_jid={output_jid} waiting_result={counts['waiting_result']}"
+                f"[RUN FINAL] input phase held client={client_name} output_jid={output_jid} "
+                f"waiting_result={counts['waiting_result']}"
             )
+        else:
+            counts.update(self._queue_input_group_totals(client_name, session_name, trigger_message_id, icons, limit * 10, active_business_date))
+            counts["input_phase_held"] = False
         trace(f"[RUN FINAL] queued client={client_name} output_jid={output_jid} date={active_business_date} counts={counts}")
         return counts
 

@@ -205,7 +205,7 @@ class Session(Reply_processor, Scheduler):
         if not target:
             trace(f"[OVERFLOW] skip contact={contact} reason=no_output_group settings={settings!r}")
             return False
-        rows, total = [], 0
+        rows, bets, total = [], {}, 0
         for row in result_list or []:
             if not isinstance(row, (list, tuple)) or len(row) < 2:
                 continue
@@ -223,6 +223,8 @@ class Session(Reply_processor, Scheduler):
             # but that amount applies to every printed number.  Total the
             # same atomic values that are kept in Mongo/the scheduled table.
             rows.append(self._forward_table_row(row, excess))
+            for token in tokens:
+                bets[token] = bets.get(token, 0) + excess
             total += excess * len(tokens)
         if total <= 0:
             trace(f"[OVERFLOW] skip contact={contact} reason=no_line_above_limit target={target}")
@@ -233,6 +235,9 @@ class Session(Reply_processor, Scheduler):
             target,
             text,
             market=market,
+            # Overflow is its own output table.  It must participate in that
+            # group's Run Final exactly like an Instant or scheduled table.
+            settlement_payload={"bets": bets, "total_play": total, "source_contact": contact, "overflow": True},
             # Higher than an instant LD table (100): excess must leave first.
             priority=110,
         )

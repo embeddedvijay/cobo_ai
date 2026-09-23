@@ -131,6 +131,36 @@ class OutputSettlementService:
                 played.append((kind, stake))
         return played
 
+    def _matched_played_stakes(self, transaction: dict, business_date: str, result_cache: dict[str, dict]) -> list[tuple[str, int]]:
+        """Return only category stakes whose exact game number won.
+
+        Input-group Final must use the same result rule as Forward's final
+        table.  Merely playing TP 111/222 must not appear in TOTAL TP unless
+        that exact pannā was the result.
+        """
+        base_market, side = self._market_parts(str(transaction.get("Market", "")))
+        if not base_market:
+            return []
+        result_doc = result_cache.setdefault(str(business_date), db.result_document(str(business_date)))
+        values = self._values(result_doc, base_market, side)
+        if not values:
+            return []
+        matched = []
+        for row in transaction.get("Result", []) or []:
+            if not isinstance(row, (list, tuple)) or len(row) < 2:
+                continue
+            stake = _amount(row[-1])
+            if not stake:
+                continue
+            for number in (str(value).strip() for value in row[:-1] if str(value).strip().isdigit()):
+                if len(number) == 1 and number == values["ank"]:
+                    matched.append(("ank", stake))
+                elif len(number) == 2 and number == values["jodi"]:
+                    matched.append(("jodi", stake))
+                elif len(number) == 3 and number == values["panna"]:
+                    matched.append((_panna_type(number), stake))
+        return matched
+
     @staticmethod
     def _reply(market: str, values: dict, matches: dict[str, list[tuple[str, int]]], total_play: int, icons: dict) -> tuple[str, dict]:
         title = f"*{market}*\n*RESULT: {values['display']}*"
@@ -306,6 +336,7 @@ class OutputSettlementService:
         """
         groups: dict[tuple[str, str], dict] = {}
         counts = {"input_group_totals_queued": 0, "input_waiting_result": 0, "input_skipped": 0}
+        result_cache: dict[str, dict] = {}
 
         for raw in db.pending_input_group_settlements(client_name, session_name, limit, business_date=business_date):
             transaction = db.legacy_transaction(raw)
@@ -330,7 +361,7 @@ class OutputSettlementService:
             message_total = _amount(transaction.get("Total"))
             group["message_totals"].append(message_total)
             group["total_play"] += message_total
-            for category, stake in self._played_stakes(transaction):
+            for category, stake in self._matched_played_stakes(transaction, business_date, result_cache):
                 group["totals"][category] += stake
 
         for (source_jid, business_date), group in groups.items():
@@ -398,6 +429,7 @@ class OutputSettlementService:
         icons = {**DEFAULT_ICONS, **(processing.get("settlement_icons", {}) or {})}
         totals = {name: 0 for name in ("ank", "sp", "dp", "tp", "jodi")}
         message_totals, total_play = [], 0
+        result_cache: dict[str, dict] = {}
         for raw in db.input_group_rows(client_name, session_name, source_jid, business_date):
             transaction = db.legacy_transaction(raw)
             if not transaction or transaction.get("Deleted") is True:
@@ -407,7 +439,7 @@ class OutputSettlementService:
             message_total = _amount(transaction.get("Total"))
             message_totals.append(message_total)
             total_play += message_total
-            for category, stake in self._played_stakes(transaction):
+            for category, stake in self._matched_played_stakes(transaction, business_date, result_cache):
                 totals[category] += stake
         key = f"input-revision:{source_jid}:{business_date}:{revision_id}"
         final_message = self._input_group_total(business_date, totals, total_play, icons)

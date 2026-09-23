@@ -536,7 +536,7 @@ class Database:
             payload["send_attempted_at"] = None
         self.outbox.update_one({"_id": ObjectId(message_id), "state": "uncertain"}, {"$set": payload})
 
-    def pending_output_settlements(self, client_name: str, session_name: str, output_jid: str, limit: int = 1000, business_date: str | None = None) -> list[dict]:
+    def pending_output_settlements(self, client_name: str, session_name: str, output_jid: str, limit: int = 1000, business_date: str | None = None, include_legacy_overflow: bool = False) -> list[dict]:
         query = {
             "client_name": client_name,
             "session_name": session_name,
@@ -544,10 +544,14 @@ class Database:
             "state": "sent",
             "delivery_jid": output_jid,
             "market": {"$nin": [None, ""]},
-            "settlement_payload": {"$ne": None},
             "delivery_message": {"$exists": True},
             "settlement_state": {"$in": [None, "pending"]},
         }
+        # Pre-fix Overflow tables were sent without a settlement payload.
+        # Only the configured Overflow destination opts into this fallback;
+        # normal output groups keep the stricter payload-only protection.
+        if not include_legacy_overflow:
+            query["settlement_payload"] = {"$ne": None}
         if business_date:
             query["business_date"] = business_date
         return list(self.outbox.find(query).sort("created_at", ASCENDING).limit(limit))

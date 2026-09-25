@@ -97,7 +97,8 @@
   <dialog id="marketDialog" class="form-dialog">
     <form id="marketForm">
       <div class="dialog-head"><div><p class="eyebrow">NEW MARKET</p><h2>Add market timing</h2></div><button type="button" class="icon" data-close="marketDialog">×</button></div>
-      <label>Market name<input name="name" required placeholder="Example: KALYAN_DAY_OP"></label>
+      <label>Market name<input name="name" required placeholder="Example: MAIN_BAZAR_NIGHT_CL"></label>
+      <p class="editor-note">Use <b>_CL</b> for Close. A night Close can end at <b>00:10</b>; after saving, select the row to choose its exact active weekdays.</p>
       <div class="field-grid"><label>Active days<input name="days" type="number" min="0" max="7" value="6"></label><label>Start hour<input name="startHour" type="number" min="0" max="23" value="0"></label><label>Start minute<input name="startMinute" type="number" min="0" max="59" value="0"></label><label>End hour<input name="endHour" type="number" min="0" max="23" value="0"></label><label>End minute<input name="endMinute" type="number" min="0" max="59" value="0"></label></div>
       <div class="dialog-actions"><button type="button" class="secondary" data-close="marketDialog">Cancel</button><button class="primary" type="submit">Add Market</button></div>
     </form>

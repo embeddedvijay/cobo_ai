@@ -1,15 +1,6 @@
 {
   "client_name": "Workspace",
-  "dynamic_timing": {
-    "status": true,
-    "minutes": 3,
-    "max_total": 6000,
-    "ank": 1000,
-    "jodi": 200,
-    "sp": 150,
-    "dp": 100,
-    "tp": 50
-  },
+  "dynamic_timing": { "markets": {} },
   "fixed_market_time": {
     "SRIDEVI_DAY_OP": [{"hour":1,"minute":0,"second":0},6,{"hour":11,"minute":49,"second":0}],
     "SRIDEVI_DAY_CL": [{"hour":11,"minute":52,"second":0},6,{"hour":12,"minute":49,"second":0}],

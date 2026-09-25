@@ -853,6 +853,7 @@ def mobile_config():
             "session_name": session_name,
             "business_day_rollover": load_config().get("business_day_rollover", "04:00"),
             "dynamic_timing": meta["client"].get("dynamic_timing", {}),
+            "fixed_market_time": meta["session"].get("fixed_market_time", meta["session"].get("market_timings", {})),
             "market_timings": meta["session"].get("market_timings", {}),
             "market_days": meta["session"].get("market_days", {}),
             "contact_rules": meta["session"].get("contact_rules", {}),

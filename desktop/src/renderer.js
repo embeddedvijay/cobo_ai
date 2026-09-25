@@ -45,7 +45,9 @@ function todayBusinessDate() { const date = new Date(); if (date.getHours() < 4)
 function validBusinessDate(value) { return /^\d{2}-\d{2}-\d{2}$/.test(value || ''); }
 function daysFor(key, row) {
   const saved = getConfig().market_days?.[key];
-  return Array.isArray(saved) ? saved.map(Number) : Array.from({ length: Number(row?.[1] || 0) }, (_, index) => index);
+  // Legacy timings use the final weekday index (4 = Mon–Fri, 6 = Mon–Sun),
+  // not a literal count. Keep existing markets unchanged on their first edit.
+  return Array.isArray(saved) ? saved.map(Number) : Array.from({ length: Math.min(7, Math.max(0, Number(row?.[1] ?? -1) + 1)) }, (_, index) => index);
 }
 function destinationNames(kind, current = '') {
   const values = new Set(availableOutputGroups);

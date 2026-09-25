@@ -13,7 +13,6 @@ import re
 from .hla_adv import hla
 hla_calculate = hla(debug=False).run
 
-from .dynamic_time_manager import dynamic_time_manager
 from .dynamic_handler import dynamic_validator,format_conversion
 from .debug_log import trace
 
@@ -86,39 +85,71 @@ def set_active_market(active_market:dict,markets_time:dict)->dict:
     return active_market
 
 
-class Reply_processor(dynamic_time_manager):
+class Reply_processor:
 
     def __init__(self) -> None:
-        super().__init__()
-
+        # Desktop dynamic timing is a fixed post-close grace window. Do not
+        # load/mutate the old YAML result-driven manager, which could move a
+        # configured market close unexpectedly.
+        self.dynamic_market_time = {}
         self.active_market = set_active_market({
                                     "DAY" : list(),
                                     "NIGHT" : list()},self.markets_time)
         return
-        
+
+    def _dynamic_rule(self, market: str) -> dict:
+        config = self.dynamic_timing or {}
+        markets = config.get("markets", {}) or {}
+        row = markets.get(market, {}) or {}
+        if row:
+            rule = {**config, **row}
+            rule["enabled"] = bool(row.get("enabled", row.get("status", False)))
+            return rule
+        if not markets and config.get("status", False):
+            return {**config, "enabled": True}
+        return {"enabled": False}
+
+    def _market_day_enabled(self, market: str, day, work_day: int) -> bool:
+        selected = (self.session_data.get("market_days") or {}).get(market)
+        if isinstance(selected, (list, tuple, set)):
+            try:
+                return day.weekday() in {int(value) % 7 for value in selected}
+            except (TypeError, ValueError):
+                return False
+        return day.weekday() <= int(work_day)
+
+    def _is_dynamic_grace(self, market: str, now: datetime | None = None) -> bool:
+        rule = self._dynamic_rule(market)
+        minutes = int(rule.get("minutes", 0) or 0)
+        if not rule.get("enabled") or minutes <= 0 or market not in self.markets_time:
+            return False
+        now = now or datetime.now()
+        start_time, work_day, end_time = self.markets_time[market]
+        end_at = datetime.combine(now.date(), end_time)
+        market_day = end_at.date()
+        if end_time <= start_time:
+            market_day -= timedelta(days=1)
+        elapsed = (now - end_at).total_seconds()
+        return 0 <= elapsed <= minutes * 60 and self._market_day_enabled(market, market_day, work_day)
+
     def get_active_market(self,market:str):
-        current_time = datetime.now().time()
+        current = datetime.now()
+        current_time = current.time()
         active_markets = []
-
-        if self.dynamic_timing.get('status',False):
-            #print("CHekd for dynamic in")
-            markets_time = self.dynamic_market_time
-        else:
-            markets_time = self.markets_time
-
-        for market_name, (start_time,work_day,end_time) in markets_time.items():
-            if(start_time<end_time):
-                if start_time <= current_time < end_time:
-                    if(datetime.now().weekday() <= work_day ):
-                        active_markets.append(market_name)
+        for market_name, (start_time,work_day,end_time) in self.markets_time.items():
+            if start_time < end_time:
+                if start_time <= current_time < end_time and self._market_day_enabled(market_name, current.date(), work_day):
+                    active_markets.append(market_name)
             else:
-                if((start_time <= current_time) or (current_time < end_time)):
-                    if(datetime.now().weekday() -1 <= work_day ):
+                if start_time <= current_time or current_time < end_time:
+                    market_day = current.date() if current_time >= start_time else (current - timedelta(days=1)).date()
+                    if self._market_day_enabled(market_name, market_day, work_day):
                         active_markets.append(market_name)
+            if self._is_dynamic_grace(market_name, current):
+                active_markets.append(market_name)
         for name in active_markets:
-            if((market.upper() in name) ):
+            if market.upper() in name:
                 return name
-            
         return False
     
     def reply_image(self,contact:str,message_id:str,image_path:str,text:str):
@@ -210,6 +241,12 @@ class Reply_processor(dynamic_time_manager):
                         return msg,1
 
                 if(flag == 'amt'):
+                    if self._is_dynamic_grace(market) and not dynamic_validator(self._dynamic_rule(market), result_list, total):
+                        data["Action"] = "❌ Dynamic limit"
+                        data["Analysis"] = hla_analysis
+                        data['dynamic_validation'] = False
+                        add_data(data)
+                        return "❌",1
                     msg += "✅✅"
                     # A missing/wrong total can still contain fully parsed
                     # game rows. LD=100 category overflow is independent of
@@ -231,57 +268,44 @@ class Reply_processor(dynamic_time_manager):
                     return msg,1
                 
                 elif( action == "✅✅"):
+                    if self._is_dynamic_grace(market):
+                        data["Action"] = "❌ Dynamic format/limit"
+                        data["Analysis"] = hla_analysis
+                        data['dynamic_validation'] = False
+                        add_data(data)
+                        return "❌",1
                     msg += action
                     self.forward_unparsed(contact, market, text)
                     return msg,1
                 
-                if self.dynamic_timing.get('status',False) and (
-                        (self.markets_time[market][-1] <= current_time and self.markets_time[market][-1].hour!=0) 
-                            or (self.markets_time[market][-1].hour==0 and current_time.hour==0 and self.markets_time[market][-1] <= current_time) 
-                    )  :
-                    if current_time <= self.dynamic_market_time[market][-1]:
-                    # Dynamic conditions here
-                        if(action == "✅🔴"):
-                            data["Action"] = "❌ Time Over"
-                            msg = "❌"
-                            data['dynamic_validation'] = False
-                            add_data(data)
-                            return "LAST TIME CANCEL NAHI HOGA",1
-                        
-                        elif "✅" in action :
-                            if dynamic_validator(self.dynamic_timing,result_list,total):
-                                data["Action"] = action
-                                data["Result"] = result_list
-                                data["Total"] = total
-                                instant = self.is_instant_cutting(contact)
-                                data["Settled"] = instant
-                                data["Analysis"] = hla_analysis
-                                data['dynamic_validation'] = True
-                                msg += action
-                            else:
-                                data["Action"] = "❌"
-                                data["Analysis"] = hla_analysis
-                                msg = "❌"
-                                data['dynamic_validation'] = False
-                            add_data(data)
-                            if data.get("dynamic_validation") is True:
-                                self.notify_limit_once(contact)
-                                instant_sent = self.send_instant_table(contact, market, result_list) if instant else False
-                                overflow_sent = self.send_category_overflow(contact, market, result_list)
-                                trace(f"[PLAY TRACE] dynamic delivery forwarded=False instant_sent={instant_sent} overflow_sent={overflow_sent}")
-                            return msg,1
-                        
-                        else:
-                            msg += action
-                            data["Action"] = msg
-                            data["Analysis"] = hla_analysis
-                            data['dynamic_validation'] = False
-                            add_data(data)
-                            return "❌",1 
-                    else:
+                if self._is_dynamic_grace(market):
+                    dynamic_rule = self._dynamic_rule(market)
+                    if action == "✅🔴":
                         data["Action"] = "❌ Time Over"
+                        msg = "❌"
+                        data['dynamic_validation'] = False
                         add_data(data)
-                        return "❌",0 
+                        return "LAST TIME CANCEL NAHI HOGA",1
+                    if normal_accepted and dynamic_validator(dynamic_rule, result_list, total):
+                        data["Action"] = action
+                        data["Result"] = result_list
+                        data["Total"] = total
+                        instant = self.is_instant_cutting(contact)
+                        data["Settled"] = instant
+                        data["Analysis"] = hla_analysis
+                        data['dynamic_validation'] = True
+                        msg += action
+                        add_data(data)
+                        self.notify_limit_once(contact)
+                        instant_sent = self.send_instant_table(contact, market, result_list) if instant else False
+                        overflow_sent = self.send_category_overflow(contact, market, result_list)
+                        trace(f"[PLAY TRACE] dynamic delivery forwarded=False instant_sent={instant_sent} overflow_sent={overflow_sent}")
+                        return msg,1
+                    data["Action"] = "❌ Dynamic limit"
+                    data["Analysis"] = hla_analysis
+                    data['dynamic_validation'] = False
+                    add_data(data)
+                    return "❌",1
                     
                 # elif (current_time > self.markets_time[market][-1]  or  current_time <= self.markets_time[market][0] )  and (self.markets_time[market][-1].hour!=0) :
                 #     data["Action"] = "❌ Time Over"
@@ -396,14 +420,6 @@ class Reply_processor(dynamic_time_manager):
                         traceback.print_exc()
 
                         #self.send_disclaimer(time)
-            if self.dynamic_timing.get('status',False):
-            
-                try:
-                    if self.client_name == 'vijay':
-                        self.write_dynamic_time(text,temp_market)
-                except:
-                    print("-------------- time mnger ERROR ----------")
-                    traceback.print_exc()
             return "",0
         
         else:

@@ -811,12 +811,21 @@ def mobile_live_detail(date: str = Query(...), contact: str = Query(...), market
             amount = _money_amount(bet[-1])
             tokens = [str(value).strip() for value in bet[:-1] if str(value).strip().isdigit()]
             lengths = {len(value) for value in tokens}
+            # Stored legacy Result rows may carry either a per-number stake or
+            # the line total. Use the transaction Total to cap expanded rows so
+            # "1-2-3=1500" reports category play 1500, never 4500.
             if lengths == {1}:
                 categories["ank"]["play"] += amount
             elif lengths == {2}:
                 categories["jodi"]["play"] += amount
             elif lengths == {3} and tokens:
                 categories[panna_kind(tokens[0])]["play"] += amount
+        row_total = _money_amount(row.get("Total"))
+        row_category_sum = sum(item["play"] for item in categories.values())
+        if row_category_sum > row_total > 0:
+            scale = row_total / row_category_sum
+            for item in categories.values():
+                item["play"] = _money_amount(item["play"] * scale)
     for side in ("OP", "CL"):
         detail = data.get("breakdown", {}).get(side, {})
         for key in ("ank", "jodi"):

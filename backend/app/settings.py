@@ -29,12 +29,12 @@ def business_date(now=None) -> str:
     """
     from datetime import datetime, timedelta, time
     now = now or datetime.now()
-    value = str(load_config().get("business_day_rollover", "00:50"))
+    value = str(load_config().get("business_day_rollover", "04:00"))
     try:
         hour, minute = (int(part) for part in value.split(":", 1))
         rollover = time(hour, minute)
     except (TypeError, ValueError):
-        rollover = time(0, 50)
+        rollover = time(4, 0)
     if now.time() < rollover:
         now -= timedelta(days=1)
     return now.strftime("%y-%m-%d")

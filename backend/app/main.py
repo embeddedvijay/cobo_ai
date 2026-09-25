@@ -13,7 +13,7 @@ from .database import db
 from .legacy_engine import engine
 from .output_settlement_service import output_settlement_service
 from .settlement_service import settlement_service
-from .settings import bridge_secret, find_session
+from .settings import bridge_secret, find_session, load_config
 from session_bot.debug_log import trace
 
 app = FastAPI(title="Dust Legacy Operations + Baileys Bridge")
@@ -730,3 +730,161 @@ def outbox_invalid_target(message_id: str, error: str = "", x_bridge_secret: str
     verify(x_bridge_secret)
     db.mark_outbox_invalid_target(message_id, error or "Unknown WhatsApp output group")
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Mobile control API
+# ---------------------------------------------------------------------------
+# This is intentionally an additive adapter over the already-final desktop
+# operations.  Desktop routes and business services above remain unchanged.
+# Local Android testing currently uses one configured runtime client.  Cloud
+# authentication will replace this resolver with token -> client mapping.
+def _mobile_context() -> tuple[str, str]:
+    clients = load_config().get("clients", [])
+    if not clients:
+        raise HTTPException(status_code=503, detail="No Cobo client is configured")
+    client = clients[0]
+    client_name = str(client.get("client_name") or "").strip()
+    sessions = client.get("sessions", [])
+    session_name = str((sessions[0] if sessions else {}).get("session_name") or "_runtime").strip()
+    if not client_name:
+        raise HTTPException(status_code=503, detail="Configured client name is empty")
+    return client_name, session_name
+
+
+class MobileFinalRequest(BaseModel):
+    output_group: str
+
+
+@app.get("/mobile/me")
+def mobile_me():
+    client_name, session_name = _mobile_context()
+    return {
+        "client_id": client_name,
+        "client_name": client_name,
+        "session_name": session_name,
+        "workspace_name": client_name,
+        "auth_mode": "local-test-bypass",
+    }
+
+
+@app.get("/mobile/dashboard")
+def mobile_dashboard(date: str = Query(...)):
+    client_name, session_name = _mobile_context()
+    payload = desktop_dashboard(date, client_name, session_name, "", "")
+    # Keep the mobile contract stable without changing the final desktop API.
+    payload["live_messages"] = payload.get("messages", [])
+    return payload
+
+
+@app.get("/mobile/transactions")
+def mobile_transactions(date: str = Query(...)):
+    client_name, _session_name = _mobile_context()
+    return desktop_transactions(date, client_name, "")
+
+
+@app.get("/mobile/hisab")
+def mobile_hisab(date: str = Query(...)):
+    client_name, _session_name = _mobile_context()
+    payload = desktop_hisab(date, client_name, "")
+    payload["rows"] = [
+        {
+            **row,
+            "current_balance": row.get("final_balance", 0),
+        }
+        for row in payload.get("records", [])
+    ]
+    return payload
+
+
+@app.get("/mobile/results")
+def mobile_results(date: str = Query(...)):
+    client_name, session_name = _mobile_context()
+    return desktop_results(date, client_name, session_name)
+
+
+@app.get("/mobile/final-options")
+def mobile_final_options():
+    client_name, session_name = _mobile_context()
+    return desktop_final_options(client_name, session_name)
+
+
+@app.post("/mobile/run-final")
+def mobile_run_final(payload: MobileFinalRequest):
+    client_name, session_name = _mobile_context()
+    return desktop_run_final(ManualFinalRequest(
+        client_name=client_name,
+        session_name=session_name,
+        output_group=payload.output_group,
+    ))
+
+
+@app.get("/mobile/config")
+def mobile_config():
+    client_name, session_name = _mobile_context()
+    meta = find_session(client_name, session_name)
+    return {
+        "config": {
+            "client_name": client_name,
+            "session_name": session_name,
+            "business_day_rollover": load_config().get("business_day_rollover", "04:00"),
+            "dynamic_timing": meta["client"].get("dynamic_timing", {}),
+            "market_timings": meta["session"].get("market_timings", {}),
+            "market_days": meta["session"].get("market_days", {}),
+            "contact_rules": meta["session"].get("contact_rules", {}),
+            "in_contacts": meta["session"].get("in_contacts", []),
+            "out_contacts": meta["session"].get("out_contacts", {}),
+        },
+        "read_only": True,
+        "note": "Local test reads the active runtime config. Mobile config writes are disabled until cloud tenant storage is enabled.",
+    }
+
+
+@app.put("/mobile/config")
+def save_mobile_config(_payload: dict):
+    # Never mutate the desktop-generated runtime file from the Android test
+    # client. Cloud tenant config will get its own durable write path.
+    raise HTTPException(status_code=409, detail="Mobile config save is disabled in local test mode")
+
+
+@app.get("/mobile/service/status")
+def mobile_service_status():
+    client_name, session_name = _mobile_context()
+    raw_states = {
+        str(row["_id"]): row["count"]
+        for row in db.raw.aggregate([
+            {"$match": {"client_name": client_name, "session_name": session_name}},
+            {"$group": {"_id": "$state", "count": {"$sum": 1}}},
+        ])
+    }
+    outbox_states = {
+        str(row["_id"] or "pending"): row["count"]
+        for row in db.outbox.aggregate([
+            {"$match": {"client_name": client_name, "session_name": session_name}},
+            {"$group": {"_id": "$state", "count": {"$sum": 1}}},
+        ])
+    }
+    return {
+        "running": True,
+        "whatsapp_status": "Backend reachable",
+        "client_name": client_name,
+        "session_name": session_name,
+        "states": raw_states,
+        "outbox": outbox_states,
+        "control_mode": "desktop-owned-local-test",
+    }
+
+
+@app.post("/mobile/service/start")
+def mobile_service_start():
+    # The FastAPI process cannot safely spawn a second copy of its own desktop
+    # process tree. This becomes tenant-runtime control in the cloud service.
+    return {"ok": True, "message": "Service is already managed by the desktop launcher in local test mode"}
+
+
+@app.post("/mobile/service/stop")
+def mobile_service_stop():
+    raise HTTPException(
+        status_code=409,
+        detail="Stopping the desktop-owned service from Android is disabled in local test mode",
+    )

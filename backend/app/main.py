@@ -837,9 +837,27 @@ def mobile_live_detail(date: str = Query(...), contact: str = Query(...), market
     for side in ("OP", "CL"):
         detail = data.get("breakdown", {}).get(side, {})
         side_categories = {key: {"play": 0, "win": 0} for key in ("ank", "jodi", "sp", "dp", "tp")}
-        side_categories["ank"]["play"] = _money_amount(detail.get("ank", {}).get("play", 0))
+        # Desktop breakdown expands each number in a line, so its category
+        # play is number-wise (1-2-3=1500 becomes 4500). Live Update needs
+        # message-wise category stake: count the line amount exactly once.
+        for row in collection.find(query):
+            row_market = str(row.get("Market", ""))
+            base_market, row_side = settlement_service._market_parts(row_market)
+            if (base_market or row_market) != data.get("selected_market", market) or row_side != side:
+                continue
+            for bet in row.get("Result", []) or []:
+                if not isinstance(bet, (list, tuple)) or len(bet) < 2:
+                    continue
+                amount = _money_amount(bet[-1])
+                tokens = [str(value).strip() for value in bet[:-1] if str(value).strip().isdigit()]
+                lengths = {len(value) for value in tokens}
+                if lengths == {1}:
+                    side_categories["ank"]["play"] += amount
+                elif lengths == {2}:
+                    side_categories["jodi"]["play"] += amount
+                elif lengths == {3} and tokens:
+                    side_categories[panna_kind(tokens[0])]["play"] += amount
         side_categories["ank"]["win"] = _money_amount(detail.get("ank", {}).get("win", 0))
-        side_categories["jodi"]["play"] = _money_amount(detail.get("jodi", {}).get("play", 0))
         side_categories["jodi"]["win"] = _money_amount(detail.get("jodi", {}).get("win", 0))
         for item in detail.get("winning_numbers", {}).get("panna", []) or []:
             key = panna_kind(str(item.get("number", "")))

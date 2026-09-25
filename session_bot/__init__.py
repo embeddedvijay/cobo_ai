@@ -364,6 +364,13 @@ class Session(Reply_processor, Scheduler):
     def process_incoming(self, text: str, contact: str, message_id: str):
         """Original Reply_processor.reply() entry point used by the FastAPI bridge."""
         self.last_reply_type = None
+        # A market name can also appear in ordinary group chat (for example,
+        # "Sridevi kal open kab hai?"). A play always contains at least one
+        # number, while normal chat must never create an OK, Fast-forward,
+        # outbox message, or database play record.
+        if not re.search(r"\d", str(text or "")):
+            trace(f"[PLAY TRACE] ignored non-game chat contact={contact} message_id={message_id} no_numeric_value=True")
+            return "", 0
         # No recognised market means no valid HLA/DB operation. It may still be
         # forwarded only when this customer's Director has one clear destination.
         from .reply_processor import format_check

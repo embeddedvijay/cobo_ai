@@ -16,69 +16,64 @@ def print(*args, **kwargs):
 
 class Scheduler:
 
+    def _schedule_days(self, market, start_time, end_time):
+        """Return calendar weekdays for a market's table job.
+
+        Desktop weekdays describe the market day. For a close that ends after
+        midnight, its cron job runs on the following calendar day. Business
+        date remains separate and is still governed by the 04:00 rollover.
+        Configurations without explicit weekdays preserve legacy every-day
+        behaviour.
+        """
+        selected = (self.session_data.get("market_days") or {}).get(market)
+        if not isinstance(selected, (list, tuple, set)):
+            return "*"
+        try:
+            days = sorted({int(day) % 7 for day in selected})
+        except (TypeError, ValueError):
+            return "*"
+        if not days:
+            return "*"
+        if end_time <= start_time:
+            days = sorted({(day + 1) % 7 for day in days})
+        return ",".join(str(day) for day in days)
+
+    def _add_market_job(self, market, start_time, run_time, target, per):
+        days = self._schedule_days(market, start_time, run_time)
+        self.scheduler.add_job(
+            self.send_table,
+            trigger=CronTrigger(year="*", month="*", day="*", day_of_week=days,
+                                hour=run_time.hour, minute=run_time.minute, second=run_time.second),
+            args=[self.client_name, market, target, per],
+            misfire_grace_time=60, coalesce=True,
+        )
+        trace(f"[SCHEDULER] registered market={market} at={run_time.isoformat()} weekdays={days} target={target!r}")
+        if '_CL' in market:
+            check_time = (datetime.combine(dtt.date.today(), run_time) - timedelta(minutes=10)).time()
+            self.scheduler.add_job(
+                self.check_open_result_of_market,
+                trigger=CronTrigger(year="*", month="*", day="*", day_of_week=days,
+                                    hour=check_time.hour, minute=check_time.minute, second=check_time.second),
+                args=[market], misfire_grace_time=60, coalesce=True,
+            )
+            trace(f"[SCHEDULER] registered open-result check market={market} at={check_time.isoformat()} weekdays={days}")
+
     def __init__(self) -> None:
-        # for master_contact,customer_contacts in get_contacts_table(self.client_name).items():
-        #     print(master_contact,"==========>>",customer_contacts,len(customer_contacts))
-
-        # contact_cutting = {k:int(100-int(v.get("LD",0))) for k,v in get_contacts(self.client_name).items()}
-        # print(contact_cutting)
-
         self.scheduler = BackgroundScheduler()
         trace(f"[SCHEDULER] init client={self.client_name} table_routes={bool(self.out_contacts.get('table', False))} markets={len(self.markets_time)}")
-        if self.out_contacts.get('table',False):
-            for market,(start,dt,market_time) in self.markets_time.items():
-                if(datetime.now().weekday()<=dt):
-                    temp_time = datetime.combine(dtt.date.today(), market_time)
-                    schedule_times = list()
-                    schedule_times.append(temp_time)
-                    per = self.out_contacts['table'].get(market+'per',100)
-
-                    for time in schedule_times:
-                        self.scheduler.add_job(
-                            self.send_table,
-                            trigger = CronTrigger(year="*", month="*", day="*", hour=time.hour, minute=time.minute, second=time.second),
-                            args = [self.client_name,market,self.out_contacts['table'][market],per],
-                            misfire_grace_time=60,coalesce=True
-                        )
-                        trace(f"[SCHEDULER] registered market={market} at={time.isoformat()} target={self.out_contacts['table'][market]!r}")
-                    if '_CL' in market:
-                        open_result_check_time  = temp_time - timedelta(minutes=10)
-                        self.scheduler.add_job(
-                            self.check_open_result_of_market,
-                            trigger = CronTrigger(year="*", month="*", day="*", hour=open_result_check_time.hour, minute=open_result_check_time.minute, second=open_result_check_time.second),
-                            args = [market],
-                            misfire_grace_time=60,coalesce=True
-                        )
-                        trace(f"[SCHEDULER] registered dynamic market={market} at={time.isoformat()} target={self.out_contacts['table'][market]!r}")
-            for market,(start,dt,market_time) in self.dynamic_market_time.items():
-                if(datetime.now().weekday()<=dt):
-                    temp_time = datetime.combine(dtt.date.today(), market_time)
-                    schedule_times = list()
-                    schedule_times.append(temp_time)
-                    per = self.out_contacts['table'].get(market+'per',100)
-
-                    for time in schedule_times:
-                        self.scheduler.add_job(
-                            self.send_table,
-                            trigger = CronTrigger(year="*", month="*", day="*", hour=time.hour, minute=time.minute, second=time.second),
-                            args = [self.client_name,market,self.out_contacts['table'][market],per],
-                            misfire_grace_time=60,coalesce=True
-                        )
-                    if '_CL' in market:
-                        open_result_check_time  = temp_time - timedelta(minutes=10)
-                        self.scheduler.add_job(
-                            self.check_open_result_of_market,
-                            trigger = CronTrigger(year="*", month="*", day="*", hour=open_result_check_time.hour, minute=open_result_check_time.minute, second=open_result_check_time.second),
-                            args = [market],
-                            misfire_grace_time=60,coalesce=True
-                        )
+        if self.out_contacts.get('table', False):
+            for timings in (self.markets_time, self.dynamic_market_time):
+                for market, (start, _day_count, market_time) in timings.items():
+                    target = self.out_contacts['table'].get(market)
+                    if not target:
+                        continue
+                    per = self.out_contacts['table'].get(market + 'per', 100)
+                    self._add_market_job(market, start, market_time, target, per)
 
         self.scheduler.start()
         trace(f"[SCHEDULER] started client={self.client_name} jobs={len(self.scheduler.get_jobs())}")
-        #self.scheduler.remove_all_jobs()
-        #self.show_jobs()
         return
-    
+
     def check_open_result_of_market(self,market:str):
         market_result = get_result_of_market(market=market[:-3])
         if market_result:

@@ -15,13 +15,13 @@ def get_business_date(now=None):
     otherwise keep writing tomorrow's daytime records into yesterday's DB.
     """
     now = now or datetime.datetime.now()
-    rollover = "01:30"
+    rollover = "04:00"
     try:
         rollover = str(load_runtime_config().get("business_day_rollover", rollover))
         hour, minute = (int(part) for part in rollover.split(":", 1))
         cutover = datetime.time(hour, minute)
     except Exception:
-        cutover = datetime.time(1, 30)
+        cutover = datetime.time(4, 0)
     if now.time() < cutover:
         now -= datetime.timedelta(days=1)
     return now.strftime("%y-%m-%d")

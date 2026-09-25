@@ -185,6 +185,12 @@ class OutputSettlementService:
         return "\n".join(lines), {"result": values["display"], "matches": matches, "totals": totals, "total_play": total_play}
 
     @staticmethod
+    def _category_total_lines(totals: dict, icons: dict) -> list[str]:
+        """Only show categories that actually have a non-zero played/won amount."""
+        labels = (("ank", "TOTAL ANK"), ("sp", "TOTAL SP"), ("jodi", "TOTAL JODI"), ("dp", "TOTAL DP"), ("tp", "TOTAL TP"))
+        return [f"{icons[key]} *{label} = {_amount(totals.get(key))}*" for key, label in labels if _amount(totals.get(key)) != 0]
+
+    @staticmethod
     def _group_total(items: list[dict], icons: dict) -> str:
         totals = {key: 0 for key in ("ank", "sp", "dp", "tp", "jodi")}
         total_play = 0
@@ -193,18 +199,13 @@ class OutputSettlementService:
                 totals[key] = totals.get(key, 0) + _amount(amount)
             total_play += _amount(item.get("total_play"))
         dates = sorted({str(item.get("business_date", "")) for item in items if item.get("business_date")})
-        # MongoDB collection date is YY-MM-DD; show customers DD-MM-YY.
         date = dates[0] if dates else ""
         if len(date.split("-")) == 3:
             year, month, day = date.split("-")
             date = f"{day}-{month}-{year}"
         return "\n".join([
             f"*DATE: {date}*" if date else "*FINAL GROUP TOTAL*",
-            f"{icons['ank']} *TOTAL ANK = {totals['ank']}*",
-            f"{icons['sp']} *TOTAL SP = {totals['sp']}*",
-            f"{icons['jodi']} *TOTAL JODI = {totals['jodi']}*",
-            f"{icons['dp']} *TOTAL DP = {totals['dp']}*",
-            f"{icons['tp']} *TOTAL TP = {totals['tp']}*",
+            *OutputSettlementService._category_total_lines(totals, icons),
             f"*TOTAL PLAY = {total_play}*",
         ])
 
@@ -214,29 +215,19 @@ class OutputSettlementService:
         year, month, day = business_date.split("-")
         return "\n".join([
             f"*DATE: {day}-{month}-{year}*",
-            f"{icons['ank']} *TOTAL ANK = {totals['ank']}*",
-            f"{icons['sp']} *TOTAL SP = {totals['sp']}*",
-            f"{icons['jodi']} *TOTAL JODI = {totals['jodi']}*",
-            f"{icons['dp']} *TOTAL DP = {totals['dp']}*",
-            f"{icons['tp']} *TOTAL TP = {totals['tp']}*",
+            *OutputSettlementService._category_total_lines(totals, icons),
             f"*TOTAL PLAY = {total_play}*",
         ])
 
     @staticmethod
-    def _input_group_message_play(business_date: str, message_totals: list[int], total_play: int, totals: dict, icons: dict) -> str:
-        """End with the same category final format as an output group."""
+    def _input_group_message_play(business_date: str, message_totals: list[int], total_play: int) -> str:
+        """A clean auditable expression: only each accepted message's play."""
         year, month, day = business_date.split("-")
-        expression = " + ".join(str(_amount(total)) for total in message_totals)
+        expression = " + ".join(str(_amount(total)) for total in message_totals if _amount(total) != 0) or "0"
         return "\n".join([
             f"*DATE: {day}-{month}-{year}*",
             "*MESSAGE-WISE PLAY*",
             f"{expression} = *{total_play}*",
-            f"{icons['ank']} *TOTAL ANK = {totals['ank']}*",
-            f"{icons['sp']} *TOTAL SP = {totals['sp']}*",
-            f"{icons['jodi']} *TOTAL JODI = {totals['jodi']}*",
-            f"{icons['dp']} *TOTAL DP = {totals['dp']}*",
-            f"{icons['tp']} *TOTAL TP = {totals['tp']}*",
-            f"*TOTAL PLAY = {total_play}*",
         ])
 
     @staticmethod
@@ -375,7 +366,7 @@ class OutputSettlementService:
                     db.release_settlement(raw["_id"])
                 continue
             final_message = self._input_group_total(business_date, group["totals"], group["total_play"], icons)
-            message_play = self._input_group_message_play(business_date, group["message_totals"], group["total_play"], group["totals"], icons)
+            message_play = self._input_group_message_play(business_date, group["message_totals"], group["total_play"])
             self._save_hisab(client_name, session_name, source_jid, business_date, group, final_message, message_play)
             db.enqueue({
                 "client_name": client_name,
@@ -443,7 +434,7 @@ class OutputSettlementService:
                 totals[category] += stake
         key = f"input-revision:{source_jid}:{business_date}:{revision_id}"
         final_message = self._input_group_total(business_date, totals, total_play, icons)
-        message_play = self._input_group_message_play(business_date, message_totals, total_play, totals, icons)
+        message_play = self._input_group_message_play(business_date, message_totals, total_play)
         self._save_hisab(client_name, session_name, source_jid, business_date, {
             "raws": db.input_group_rows(client_name, session_name, source_jid, business_date),
             "totals": totals, "message_totals": message_totals, "total_play": total_play,

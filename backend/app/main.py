@@ -786,6 +786,35 @@ def mobile_dashboard(date: str = Query(...)):
     return payload
 
 
+@app.get("/mobile/live-detail")
+def mobile_live_detail(date: str = Query(...), contact: str = Query(...), market: str = Query(...)):
+    client_name, session_name = _mobile_context()
+    data = desktop_dashboard(date, client_name, session_name, market, contact)
+    categories = {key: {"play": 0, "win": 0} for key in ("ank", "jodi", "sp", "dp", "tp")}
+    def panna_kind(number: str) -> str:
+        digits = str(number)
+        unique = len(set(digits))
+        return "sp" if unique == 3 else "dp" if unique == 2 else "tp"
+    for number, amount in data.get("number_table", {}).items():
+        key = "ank" if len(str(number)) == 1 else "jodi" if len(str(number)) == 2 else panna_kind(str(number))
+        categories[key]["play"] += _money_amount(amount)
+    for side in ("OP", "CL"):
+        detail = data.get("breakdown", {}).get(side, {})
+        for key in ("ank", "jodi"):
+            categories[key]["win"] += _money_amount(detail.get(key, {}).get("win", 0))
+        for item in detail.get("winning_numbers", {}).get("panna", []) or []:
+            key = panna_kind(str(item.get("number", "")))
+            categories[key]["win"] += _money_amount(item.get("win", 0))
+    return {
+        "date": date,
+        "contact": contact,
+        "market": data.get("selected_market", market),
+        "play": sum(item["play"] for item in categories.values()),
+        "win": sum(item["win"] for item in categories.values()),
+        "categories": categories,
+    }
+
+
 @app.get("/mobile/transactions")
 def mobile_transactions(date: str = Query(...)):
     client_name, _session_name = _mobile_context()

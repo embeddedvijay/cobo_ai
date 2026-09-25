@@ -4,6 +4,7 @@ from bson import ObjectId
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
+import yaml
 import re
 import traceback
 from fastapi.encoders import jsonable_encoder
@@ -14,7 +15,7 @@ from .database import db
 from .legacy_engine import engine
 from .output_settlement_service import output_settlement_service
 from .settlement_service import settlement_service
-from .settings import bridge_secret, find_session, load_config
+from .settings import bridge_secret, find_session, load_config, runtime_config_path
 from session_bot.debug_log import trace
 
 app = FastAPI(title="Dust Legacy Operations + Baileys Bridge")
@@ -811,6 +812,21 @@ def mobile_results(date: str = Query(...)):
     return desktop_results(date, client_name, session_name)
 
 
+@app.put("/mobile/results")
+def save_mobile_result(payload: ResultEditorUpdate):
+    return save_desktop_result(payload)
+
+
+@app.put("/mobile/transactions")
+def save_mobile_transaction(payload: TransactionEditorUpdate):
+    return save_desktop_transaction(payload)
+
+
+@app.post("/mobile/transactions/reject")
+def reject_mobile_transaction(payload: TransactionReject):
+    return reject_desktop_transaction(payload)
+
+
 @app.get("/mobile/final-options")
 def mobile_final_options():
     client_name, session_name = _mobile_context()
@@ -849,10 +865,30 @@ def mobile_config():
 
 
 @app.put("/mobile/config")
-def save_mobile_config(_payload: dict):
-    # Never mutate the desktop-generated runtime file from the Android test
-    # client. Cloud tenant config will get its own durable write path.
-    raise HTTPException(status_code=409, detail="Mobile config save is disabled in local test mode")
+def save_mobile_config(payload: dict):
+    client_name, session_name = _mobile_context()
+    config = load_config()
+    target = None
+    for client in config.get("clients", []):
+        if str(client.get("client_name", "")) != client_name:
+            continue
+        for session in client.get("sessions", []):
+            if str(session.get("session_name", "")) == session_name:
+                target = session
+                break
+    if target is None:
+        raise HTTPException(status_code=404, detail="Configured mobile session not found")
+    allowed = {"fixed_market_time", "market_timings", "market_days", "in_contacts", "out_contacts", "contact_rules", "dynamic_timing"}
+    for key in allowed:
+        if key in payload:
+            target[key] = payload[key]
+    path = runtime_config_path()
+    temp = path.with_suffix(path.suffix + ".mobile.tmp")
+    with temp.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(config, handle, allow_unicode=True, sort_keys=False)
+    temp.replace(path)
+    load_config.cache_clear()
+    return {"ok": True, "config": find_session(client_name, session_name)["session"]}
 
 
 @app.get("/mobile/service/status")

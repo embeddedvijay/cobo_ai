@@ -77,9 +77,24 @@ function destinationInput(kind, current, attribute) {
   const placeholder = 'Select or type WhatsApp group name';
   return `<span class="destination-combobox"><input ${attribute} list="outputGroupNames" value="${esc(current || '')}" placeholder="${placeholder}"><i>⌄</i><small class="destination-status"></small></span>`;
 }
+function syncedGroupOptions(current = '', placeholder = 'Select WhatsApp group', excluded = new Set()) {
+  const names = availableOutputGroups.filter(name => !excluded.has(name));
+  const selected = names.includes(current) ? current : '';
+  return `<option value="" ${selected ? '' : 'selected'}>${esc(placeholder)}</option>${names.map(name => `<option value="${esc(name)}" ${name === selected ? 'selected' : ''}>${esc(name)}</option>`).join('')}`;
+}
+function refreshAddGroupPicker() {
+  const configuredInputs = new Set(contacts().map(([name]) => name));
+  const customer = $('#groupCustomerName');
+  const table = $('#groupAllTable');
+  const forward = $('#groupAllForward');
+  const overflow = $('#groupOverflowOutput');
+  if (customer) customer.innerHTML = syncedGroupOptions('', 'Select customer WhatsApp group', configuredInputs);
+  if (table) table.innerHTML = syncedGroupOptions('', 'Select table WhatsApp group');
+  if (forward) forward.innerHTML = syncedGroupOptions('', 'Select forward WhatsApp group');
+  if (overflow) overflow.innerHTML = syncedGroupOptions('', 'No overflow output');
+}
 function prepareGroupDialog() {
-  $('#groupAllTable').value = '';
-  $('#groupAllForward').value = '';
+  refreshAddGroupPicker();
 }
 async function loadOutputGroups() {
   if (!window.cobo.outputGroups) return;
@@ -89,6 +104,7 @@ async function loadOutputGroups() {
     const list = $('#outputGroupNames');
     if (list) list.innerHTML = availableOutputGroups.map(name => `<option value="${esc(name)}"></option>`).join('');
     loadGroupMappings();
+    refreshAddGroupPicker();
     renderGroups();
     // Once the bridge has returned real group names, re-check existing saved
     // destinations too. An old typo/ambiguous name therefore turns red even
@@ -97,7 +113,7 @@ async function loadOutputGroups() {
       const visibleGroups = $('#groupManagerSecondary') || $('#groupManager');
       if (visibleGroups) validateDestinationInputs(visibleGroups);
     }
-  } catch (_) { availableOutputGroups = []; const list = $('#outputGroupNames'); if (list) list.innerHTML = ''; renderGroups(); }
+  } catch (_) { availableOutputGroups = []; const list = $('#outputGroupNames'); if (list) list.innerHTML = ''; refreshAddGroupPicker(); renderGroups(); }
 }
 function showDestinationStatus(input, state, message = '') {
   const box = input.closest('.destination-combobox');
@@ -525,7 +541,7 @@ $('#marketEditor').addEventListener('click',event=>{
 ['#addGroup','#addGroupSecondary'].forEach(id=>{const node=$(id);if(node)node.addEventListener('click',()=>{prepareGroupDialog();$('#groupDialog').showModal();});});
 $('#addMarket').addEventListener('click',()=>$('#marketDialog').showModal());
 document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$('#'+button.dataset.close).close()));
-$('#groupForm').addEventListener('submit',async event=>{event.preventDefault();if(!await validateDestinationInputs(event.currentTarget)){alert('Fix the red output-group field before adding this input group.');return;}const d=new FormData(event.currentTarget);const name=String(d.get('name')).trim();if(!name)return;mutate(next=>{next.in_contacts ||= {};next.in_contacts[name]={LD:Number(d.get('ld')||100),Limit:Number(d.get('limit')||0),instant_cutting:d.get('instant')==='on',reply_settings:{normal_ok:true,fast_forward_ok:true,total_ok:true},overflow_limits:{output_group:'',ank:0,jodi:0,sp:0,dp:0,tp:0},Director:{all_table:String(d.get('allTable')||'').trim(),all_fast_forward:String(d.get('allForward')||'').trim(),market_overrides:{}},win_rate:{ANK:Number(d.get('ank')||0),Jodi:Number(d.get('jodi')||0),SP:Number(d.get('sp')||0),DP:Number(d.get('dp')||0),TP:Number(d.get('tp')||0),FS:Number(d.get('fs')||0),HS:Number(d.get('hs')||0),Commission:Number(d.get('commission')||0)}};});event.currentTarget.reset();$('#groupDialog').close();});
+$('#groupForm').addEventListener('submit',event=>{event.preventDefault();const d=new FormData(event.currentTarget);const name=String(d.get('name')).trim();if(!availableOutputGroups.length){alert('Start Service and wait for WhatsApp groups to finish syncing before adding an input group.');return;}if(!availableOutputGroups.includes(name)){alert('Select the customer group from the synced WhatsApp dropdown.');return;}const allTable=String(d.get('allTable')||'').trim();const allForward=String(d.get('allForward')||'').trim();const overflowOutput=String(d.get('overflowOutput')||'').trim();if([allTable,allForward,overflowOutput].some(value=>value&&!availableOutputGroups.includes(value))){alert('Select every destination from the synced WhatsApp dropdown.');return;}const amount=key=>Math.max(0,Number(d.get(key)||0));mutate(next=>{next.in_contacts ||= {};next.in_contacts[name]={LD:Number(d.get('ld')||100),Limit:Number(d.get('limit')||0),instant_cutting:d.get('instant')==='on',reply_settings:{normal_ok:true,fast_forward_ok:true,total_ok:true},overflow_limits:{output_group:overflowOutput,ank:amount('overflowAnk'),jodi:amount('overflowJodi'),sp:amount('overflowSp'),dp:amount('overflowDp'),tp:amount('overflowTp')},Director:{all_table:allTable,all_fast_forward:allForward,market_overrides:{}},win_rate:{ANK:Number(d.get('ank')||0),Jodi:Number(d.get('jodi')||0),SP:Number(d.get('sp')||0),DP:Number(d.get('dp')||0),TP:Number(d.get('tp')||0),FS:Number(d.get('fs')||0),HS:Number(d.get('hs')||0),Commission:Number(d.get('commission')||0)}};});event.currentTarget.reset();$('#groupDialog').close();});
 $('#overrideForm').addEventListener('submit',async event=>{event.preventDefault();if(!await validateDestinationInputs(event.currentTarget)){alert('Fix the red output-group field before adding this destination.');return;}const d=new FormData(event.currentTarget);const market=String(d.get('market')).trim();if(!market||!overrideTargetGroup)return;mutate(next=>{const group=next.in_contacts[overrideTargetGroup];group.Director ||= {};group.Director.market_overrides ||= {};group.Director.market_overrides[market]={table:String(d.get('table')||'').trim(),fast_forward:String(d.get('forward')||'').trim()};});event.currentTarget.reset();$('#overrideDialog').close();overrideTargetGroup='';});
 $('#marketForm').addEventListener('submit',event=>{event.preventDefault();const d=new FormData(event.currentTarget);const name=String(d.get('name')).trim().toUpperCase().replaceAll(' ','_');if(!name)return;if(!/_(OP|CL)$/.test(name)){alert('Market key must end with _OP or _CL, for example MAIN_BAZAR_NIGHT_CL.');return;}mutate(next=>{next.fixed_market_time ||= {};next.market_days ||= {};const days=Math.max(0,Math.min(7,Number(d.get('days')||0)));next.fixed_market_time[name]=[{hour:Number(d.get('startHour')||0),minute:Number(d.get('startMinute')||0),second:0},days,{hour:Number(d.get('endHour')||0),minute:Number(d.get('endMinute')||0),second:0}];next.market_days[name]=Array.from({length:days},(_,index)=>index);selectedMarketKey=name;});event.currentTarget.reset();$('#marketDialog').close();});
 async function chooseWorkspace(){try{const state=await window.cobo.chooseBotDirectory();log(state.botDirectory?'Project folder: '+state.botDirectory:'Project folder unchanged.');}catch(error){alert(error.message);}}

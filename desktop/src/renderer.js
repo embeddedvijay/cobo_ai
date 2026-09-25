@@ -287,7 +287,7 @@ function renderTimingTable() {
     <p class="editor-note">Night close can end after midnight, for example <b>00:10</b>. It runs on the next calendar day but remains in the previous business day until 04:00.</p>
     <label>Active Days</label><div class="weekday-row">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day,index)=>`<button type="button" data-day="${index}" class="${selectedDays.includes(index) ? 'checked' : ''}">${day}</button>`).join('')}</div><p class="editor-note" id="activeDaysNote">${selectedDays.length} day${selectedDays.length === 1 ? '' : 's'} selected</p>
     <div class="dynamic-timing-box"><div><div class="mini-title">Dynamic Timing — post-close grace</div><p>Normal parsed game only. After End Time, it is accepted for this many minutes only within the limits below.</p></div><label class="cutting-label">Enable<input data-dynamic="enabled" type="checkbox" ${dynamic.enabled ? 'checked' : ''}></label><label>Minutes<input data-dynamic="minutes" type="number" min="0" max="30" value="${esc(dynamic.minutes ?? 0)}"></label><div class="overflow-limits">${[['ank','ANK'],['jodi','JODI'],['sp','SP'],['dp','DP'],['tp','TP']].map(([key,label])=>`<label>${label} limit<input data-dynamic="${key}" type="number" min="0" value="${esc(dynamic[key] ?? 0)}"></label>`).join('')}</div></div>
-    <button class="primary editor-save" data-action="save-market">▣ &nbsp; Save Market</button>`;
+    <button class="primary editor-save" data-action="save-market">▣ &nbsp; Save Market &amp; Dynamic Timing</button>`;
 }
 function renderGroups() {
   const markup = contacts().map(([name, group]) => {

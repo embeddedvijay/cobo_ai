@@ -843,6 +843,25 @@ def mobile_run_final(payload: MobileFinalRequest):
     ))
 
 
+@app.get("/mobile/groups")
+def mobile_groups():
+    client_name, session_name = _mobile_context()
+    mappings = db.resolved_group_mappings(client_name, session_name)
+    groups = []
+    seen = set()
+    for item in mappings:
+        name = str(item.get("name", "")).strip()
+        jid = str(item.get("jid", "")).strip()
+        key = name.casefold()
+        if name and key not in seen:
+            seen.add(key)
+            groups.append({"name": name, "jid": jid, "role": str(item.get("role", "available"))})
+    return {
+        "groups": groups,
+        "output_groups": db.available_output_groups(client_name, session_name),
+    }
+
+
 @app.get("/mobile/config")
 def mobile_config():
     client_name, session_name = _mobile_context()

@@ -114,7 +114,9 @@ function runtimeConfigFromJson(value, projectDirectory) {
       backend_url: client.whatsapp?.backend_url || 'http://127.0.0.1:8015',
       reconnect_delay_ms: 2500, outbox_poll_ms: 500, max_parallel_jids: 1
     },
-    business_day_rollover: client.business_day_rollover || '01:30',
+    // Keep all night markets, including Main Bazar's 00:10 close result,
+    // in the prior trading day until the 04:00 morning reset.
+    business_day_rollover: client.business_day_rollover || '04:00',
     mongo: client.mongo || { url: 'mongodb://127.0.0.1:27017/', database: 'Market' },
     clients: [{
       client_name: client.client_name,

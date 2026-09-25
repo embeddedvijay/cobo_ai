@@ -795,9 +795,28 @@ def mobile_live_detail(date: str = Query(...), contact: str = Query(...), market
         digits = str(number)
         unique = len(set(digits))
         return "sp" if unique == 3 else "dp" if unique == 2 else "tp"
-    for number, amount in data.get("number_table", {}).items():
-        key = "ank" if len(str(number)) == 1 else "jodi" if len(str(number)) == 2 else panna_kind(str(number))
-        categories[key]["play"] += _money_amount(amount)
+    # Category PLAY is the message-line stake, not the sum of every expanded
+    # number in number_table. Example: "1-2-3=1500" is ANK play ₹1500,
+    # not ₹4500 (three numbers x ₹1500).
+    collection = desktop_collection(date)
+    query = {"Total": {"$exists": True}, "Deleted": {"$ne": True}, "Client": client_name, "Contact": contact}
+    for row in collection.find(query):
+        row_market = str(row.get("Market", ""))
+        base_market, _side = settlement_service._market_parts(row_market)
+        if (base_market or row_market) != data.get("selected_market", market):
+            continue
+        for bet in row.get("Result", []) or []:
+            if not isinstance(bet, (list, tuple)) or len(bet) < 2:
+                continue
+            amount = _money_amount(bet[-1])
+            tokens = [str(value).strip() for value in bet[:-1] if str(value).strip().isdigit()]
+            lengths = {len(value) for value in tokens}
+            if lengths == {1}:
+                categories["ank"]["play"] += amount
+            elif lengths == {2}:
+                categories["jodi"]["play"] += amount
+            elif lengths == {3} and tokens:
+                categories[panna_kind(tokens[0])]["play"] += amount
     for side in ("OP", "CL"):
         detail = data.get("breakdown", {}).get(side, {})
         for key in ("ank", "jodi"):

@@ -16,6 +16,20 @@ def print(*args, **kwargs):
 
 class Scheduler:
 
+    def _dynamic_end_time(self, market, end_time):
+        """Move a table job to its configured post-close grace end."""
+        config = self.dynamic_timing or {}
+        markets = config.get("markets", {}) or {}
+        rule = markets.get(market, {}) or {}
+        enabled = bool(rule.get("enabled", rule.get("status", False)))
+        if not rule and not markets:
+            rule = config
+            enabled = bool(config.get("status", False))
+        minutes = int(rule.get("minutes", 0) or 0)
+        if not enabled or minutes <= 0:
+            return end_time
+        return (datetime.combine(dtt.date.today(), end_time) + timedelta(minutes=minutes)).time()
+
     def _schedule_days(self, market, start_time, end_time):
         """Return calendar weekdays for a market's table job.
 
@@ -68,7 +82,7 @@ class Scheduler:
                     if not target:
                         continue
                     per = self.out_contacts['table'].get(market + 'per', 100)
-                    self._add_market_job(market, start, market_time, target, per)
+                    self._add_market_job(market, start, self._dynamic_end_time(market, market_time), target, per)
 
         self.scheduler.start()
         trace(f"[SCHEDULER] started client={self.client_name} jobs={len(self.scheduler.get_jobs())}")

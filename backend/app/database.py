@@ -213,15 +213,21 @@ class Database:
         return {"status": "not_found"}
 
     def available_output_groups(self, client_name: str, session_name: str) -> list[str]:
-        """Connected-account group names safe to offer as output destinations."""
+        """Every synced WhatsApp group name for desktop dropdowns.
+
+        The operator deliberately selects both source and destination groups
+        from this exact list. Runtime still rejects a destination that is also
+        configured as an input, so a selection can never silently echo a play
+        back into its customer chat.
+        """
         rows = self.group_mappings.find(
             {"client_name": client_name, "session_name": session_name},
-            {"group_name": 1, "roles": 1},
+            {"group_name": 1},
         )
         names = {
             str(row.get("group_name")).strip()
             for row in rows
-            if row.get("group_name") and "input" not in (row.get("roles") or [])
+            if row.get("group_name")
         }
         return sorted(names, key=str.casefold)
 

@@ -57,10 +57,14 @@ def dynamic_validator(parameters:dict,res_list:list,total:int)->bool:
     except: return False
     verified = True
     for k,v in inside.items():
-        if  any(key > parameters[k] for key in list(v.keys())):
+        # Missing/zero means this category has no grace allowance. A value is
+        # a per-line ceiling, not an accumulated day total.
+        limit = int(parameters.get(k, 0) or 0)
+        if v and (limit <= 0 or any(int(key) > limit for key in list(v.keys()))):
             verified = False
             print("false1")
-    if total>parameters['max_total']:
+    max_total = int(parameters.get('max_total', 0) or 0)
+    if max_total > 0 and total > max_total:
         verified = False
         print("false2")
     

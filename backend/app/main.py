@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from bson import ObjectId
 from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 import re
 import traceback
@@ -17,6 +18,13 @@ from .settings import bridge_secret, find_session, load_config
 from session_bot.debug_log import trace
 
 app = FastAPI(title="Dust Legacy Operations + Baileys Bridge")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost", "https://localhost", "capacitor://localhost"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def api_response(payload):

@@ -833,6 +833,22 @@ def mobile_live_detail(date: str = Query(...), contact: str = Query(...), market
         for item in detail.get("winning_numbers", {}).get("panna", []) or []:
             key = panna_kind(str(item.get("number", "")))
             categories[key]["win"] += _money_amount(item.get("win", 0))
+    sides = {}
+    for side in ("OP", "CL"):
+        detail = data.get("breakdown", {}).get(side, {})
+        side_categories = {key: {"play": 0, "win": 0} for key in ("ank", "jodi", "sp", "dp", "tp")}
+        side_categories["ank"]["play"] = _money_amount(detail.get("ank", {}).get("play", 0))
+        side_categories["ank"]["win"] = _money_amount(detail.get("ank", {}).get("win", 0))
+        side_categories["jodi"]["play"] = _money_amount(detail.get("jodi", {}).get("play", 0))
+        side_categories["jodi"]["win"] = _money_amount(detail.get("jodi", {}).get("win", 0))
+        for item in detail.get("winning_numbers", {}).get("panna", []) or []:
+            key = panna_kind(str(item.get("number", "")))
+            side_categories[key]["win"] += _money_amount(item.get("win", 0))
+        sides[side] = {
+            "play": _money_amount(detail.get("play", 0)),
+            "win": _money_amount(detail.get("win", 0)),
+            "categories": side_categories,
+        }
     return {
         "date": date,
         "contact": contact,
@@ -840,6 +856,7 @@ def mobile_live_detail(date: str = Query(...), contact: str = Query(...), market
         "play": sum(item["play"] for item in categories.values()),
         "win": sum(item["win"] for item in categories.values()),
         "categories": categories,
+        "sides": sides,
     }
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 
 from .database import db
 from .settings import find_session
@@ -455,6 +456,32 @@ class OutputSettlementService:
         })
         return True
 
+    @staticmethod
+    def _market_active_on_business_date(session: dict, market: str, business_date: str) -> bool:
+        """Use the saved Active Days for the trading date, not today's weekday.
+
+        Run Final can run after midnight, so the business date is the only
+        safe day to test. A malformed/legacy timing remains active rather
+        than silently dropping a real table.
+        """
+        try:
+            weekday = datetime.strptime(str(business_date), "%y-%m-%d").weekday()
+        except ValueError:
+            return True
+        selected = (session.get("market_days") or {}).get(market)
+        if isinstance(selected, (list, tuple, set)):
+            try:
+                return weekday in {int(day) % 7 for day in selected}
+            except (TypeError, ValueError):
+                return True
+        row = (session.get("market_timings") or {}).get(market)
+        try:
+            # Legacy timing stores the final active weekday index:
+            # 4 = Mon-Fri, 5 = Mon-Sat, 6 = Mon-Sun.
+            return weekday <= int(row[1])
+        except (TypeError, ValueError, IndexError):
+            return True
+
     def queue_group(self, client_name: str, session_name: str, output_jid: str, trigger_message_id: str, limit: int = 1000) -> dict:
         """Queue one selected output group completely before any input final.
 
@@ -469,7 +496,7 @@ class OutputSettlementService:
         processing = session.get("processing", {})
         icons = {**DEFAULT_ICONS, **(processing.get("settlement_icons", {}) or {})}
         result_cache: dict[str, dict] = {}
-        counts = {"queued": 0, "waiting_result": 0, "group_total_queued": False}
+        counts = {"queued": 0, "waiting_result": 0, "off_day_skipped": 0, "group_total_queued": False}
         queued_details: list[dict] = []
         active_business_date = db.date
         trace(f"[RUN FINAL] start client={client_name} session={session_name} output_jid={output_jid} date={active_business_date} trigger={trigger_message_id}")
@@ -484,7 +511,13 @@ class OutputSettlementService:
         for item in db.pending_output_settlements(client_name, session_name, output_jid, limit, business_date=active_business_date, include_legacy_overflow=is_overflow_output):
             if not db.reserve_output_settlement(item["_id"]):
                 continue
-            base_market, side = self._market_parts(str(item["market"]))
+            market = str(item["market"])
+            if not self._market_active_on_business_date(session, market, str(item["business_date"])):
+                db.release_output_settlement(item["_id"])
+                counts["off_day_skipped"] += 1
+                trace(f"[RUN FINAL] output off-day skipped outbox_id={item['_id']} market={market} date={item.get('business_date')}")
+                continue
+            base_market, side = self._market_parts(market)
             if item["business_date"] not in result_cache:
                 result_cache[item["business_date"]] = db.result_document(item["business_date"])
             result_doc = result_cache[item["business_date"]]

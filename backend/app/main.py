@@ -862,10 +862,23 @@ def mobile_live_detail(date: str = Query(...), contact: str = Query(...), market
         for item in detail.get("winning_numbers", {}).get("panna", []) or []:
             key = panna_kind(str(item.get("number", "")))
             side_categories[key]["win"] += _money_amount(item.get("win", 0))
+        winning = {}
+        for kind in ("ank", "jodi", "panna"):
+            winning[kind] = [
+                {
+                    "number": str(item.get("number", "")),
+                    "stake": _money_amount(item.get("stake", 0)),
+                    "win": _money_amount(item.get("win", 0)),
+                }
+                for item in detail.get("winning_numbers", {}).get(kind, []) or []
+            ]
+        result_values = _dashboard_result_values(data.get("selected_market", market), side, collection.find_one({"Result": True}) or {})
         sides[side] = {
             "play": _money_amount(detail.get("play", 0)),
             "win": _money_amount(detail.get("win", 0)),
             "categories": side_categories,
+            "winning_numbers": winning,
+            "result": result_values or {},
         }
     return {
         "date": date,

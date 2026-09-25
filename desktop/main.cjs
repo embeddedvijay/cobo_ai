@@ -125,6 +125,7 @@ function runtimeConfigFromJson(value, projectDirectory) {
       sessions: [{
         session_name: '_runtime',
         market_timings: client.fixed_market_time || {},
+        // Preserve exact weekdays from the desktop timing editor. An overnight\n        // close (for example 22:00 → 00:10) is scheduled on the next calendar\n        // day without changing its business date.\n        market_days: client.market_days || {},
         contact_rules: client.in_contacts || {},
         in_contacts: Object.entries(client.in_contacts || {}).map(([name, detail]) => `${name} ^ ${detail?.LD ?? 100}`),
         in_channels: client.in_channels || [],

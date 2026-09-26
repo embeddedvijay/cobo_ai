@@ -125,6 +125,16 @@ def desktop_collection(date: str):
     return db.db[date]
 
 
+@app.get("/desktop/run-final-status")
+def desktop_run_final_status(
+    date: str = Query(""),
+    client_name: str = Query(""),
+    session_name: str = Query("_runtime"),
+    output_jid: str = Query(""),
+):
+    business_date = date or db.date
+    return api_response(db.final_delivery_status(client_name, session_name, business_date, output_jid))
+
 @app.get("/desktop/output-groups")
 def desktop_output_groups(client_name: str = Query(""), session_name: str = Query("_runtime")):
     return {"groups": db.available_output_groups(client_name, session_name)}

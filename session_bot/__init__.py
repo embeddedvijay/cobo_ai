@@ -282,10 +282,14 @@ class Session(Reply_processor, Scheduler):
         target = self.director_target(contact, market, "fast_forward") if market else None
         if not target:
             # A no-market message has no per-market Director. Forward only when
-            # this customer has exactly one safe fallback target.
+            # this customer has exactly one safe fallback target. Older saved
+            # configs can contain string values here, so never treat them as a
+            # market routing object.
+            director = self.rule_for(contact).get("Director", {})
+            rows = director.values() if isinstance(director, dict) else []
             targets = {
-                str(row.get("fast_forward")) for row in self.rule_for(contact).get("Director", {}).values()
-                if row.get("fast_forward")
+                str(row.get("fast_forward")).strip() for row in rows
+                if isinstance(row, dict) and str(row.get("fast_forward") or "").strip()
             }
             target = next(iter(targets)) if len(targets) == 1 else None
         if not target:

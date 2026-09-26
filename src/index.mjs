@@ -35,6 +35,7 @@ const OUTBOX_STABILITY_MS = 10_000;
 const FLAP_WINDOW_MS = 5 * 60_000;
 const CRITICAL_FLAP_COUNT = 5;
 const CRITICAL_SEND_PAUSE_MS = 2 * 60_000;
+const OUTBOX_SEND_GAP_MS = 1_100;
 const DEBUG_RETENTION_DAYS = 7;
 let nextDebugMaintenanceAt = 0;
 function debugDay(value = new Date()) { return value.toISOString().slice(0, 10); }
@@ -377,6 +378,16 @@ async function sendOutbox(runtime, item) {
     throw error;
   }
   const options = item.quote ? { quoted: item.quote } : undefined;
+  // WhatsApp accepts ordinary messages quickly, but a Run Final can enqueue
+  // hundreds of table replies at once. Keep one account-wide send gap so a
+  // final is delivered steadily instead of triggering rate-overlimit.
+  const slotAt = Number(runtime.nextOutboxSendAt || 0);
+  const delayMs = Math.max(0, slotAt - Date.now());
+  if (delayMs) {
+    debugTrace('Outbox rate pacing', { id: item._id, delay_ms: delayMs });
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+  }
+  runtime.nextOutboxSendAt = Date.now() + OUTBOX_SEND_GAP_MS;
   let sent;
   try {
     debugTrace('Outbox WhatsApp send attempt', { id: item._id, target, target_name: runtime.groupNames?.get(target) || item.target, priority: item.priority, text_length: String(item.text || '').length });
@@ -440,6 +451,15 @@ async function flushOutbox(runtime) {
           await http.post(`/outbox/${item._id}/uncertain?error=${encodeURIComponent(detail)}`).catch(() => undefined);
           debugTrace('Outbox marked uncertain', { id: item._id, target: item.target, detail });
           log.error({ id: item._id, detail }, 'Outbox send is unconfirmed; not retrying automatically');
+          // Stop the whole batch on WhatsApp rate limiting. Continuing would
+          // turn every following final into an uncertain message. The normal
+          // two-minute safety pause lets the operator verify the few already
+          // attempted items before any later outbox flush.
+          if (/rate[- ]?overlimit|rate limit/i.test(detail)) {
+            runtime.deliveryPausedUntil = Date.now() + CRITICAL_SEND_PAUSE_MS;
+            debugTrace('Outbox rate limit pause', { id: item._id, pause_ms: CRITICAL_SEND_PAUSE_MS });
+            break;
+          }
         } else if (error?.deliveryHeld) {
           // This item was claimed just as the connection became unstable.
           // Return it to the durable queue; no WhatsApp send was attempted.

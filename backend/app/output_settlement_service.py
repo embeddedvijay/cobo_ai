@@ -535,19 +535,25 @@ class OutputSettlementService:
             total_play = _amount(payload.get("total_play")) or sum(_amount(value) for value in bets.values())
             matches = self._matches(bets, values)
             reply, details = self._reply(str(item["market"]), values, matches, total_play, icons)
-            db.enqueue({
-                "client_name": client_name,
-                "session_name": session_name,
-                "channel": "whatsapp",
-                "target": output_jid,
-                "text": reply,
-                "quote": item["delivery_message"],
-                "kind": "settlement_output_reply",
-                "reply_to_outbox_id": item["_id"],
-                "dedupe_key": f"output-settlement:{item['_id']}",
-                "priority": 80,
-                "business_date": item["business_date"],
-            })
+            # Output groups receive a quoted reply only for a real win.
+            # A no-win table is still settled below, so it cannot block the
+            # final total or be processed again on a later Run Final.
+            if any(matches.values()):
+                db.enqueue({
+                    "client_name": client_name,
+                    "session_name": session_name,
+                    "channel": "whatsapp",
+                    "target": output_jid,
+                    "text": reply,
+                    "quote": item["delivery_message"],
+                    "kind": "settlement_output_reply",
+                    "reply_to_outbox_id": item["_id"],
+                    "dedupe_key": f"output-settlement:{item['_id']}",
+                    "priority": 80,
+                    "business_date": item["business_date"],
+                })
+            else:
+                trace(f"[RUN FINAL] no-win reply suppressed outbox_id={item['_id']} market={item.get('market')}")
             details["business_date"] = item["business_date"]
             db.mark_output_settlement_queued(item["_id"], details)
             counts["queued"] += 1

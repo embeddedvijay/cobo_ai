@@ -271,7 +271,16 @@ class Scheduler:
         market_name = market
         if ("TIME" in market) or ("MAIN" in market):
             market_name = market_name.replace("DAY", "") if "DAY" in market else market_name.replace("NIGHT", "")
-        rows = [(key, amount) for key, amount in data.items() if amount > 0]
+        # WhatsApp table order is intentional: Ank 0-9, Jodi 00-99, then
+        # Panna 000-999.  Keep the original DB keys and amounts untouched.
+        def table_sort_key(item):
+            key = str(item[0]).strip()
+            return (len(key), int(key), key) if key.isdigit() else (99, 0, key)
+
+        rows = sorted(
+            ((key, amount) for key, amount in data.items() if amount > 0),
+            key=table_sort_key,
+        )
         total = sum(amount for _key, amount in rows)
         trace(f"[SCHEDULER] table client={client_name} market={market} target={master_contact!r} customers={customers!r} rows={rows!r} total={total}")
         message = "\n".join([f"*{market_name}*", *[f"*{key}={amount}*" for key, amount in rows], f"*TOTAL={total}*"])

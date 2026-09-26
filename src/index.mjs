@@ -24,6 +24,7 @@ const headers = secret ? { 'X-Bridge-Secret': secret } : {};
 const http = axios.create({ baseURL: backendUrl, timeout: 30_000, headers });
 const log = P({ level: process.env.LOG_LEVEL || 'info' });
 const debugLogPath = path.join(root, 'debug.log');
+const mobileStatePath = path.join(root, '.cobo-mobile-state.json');
 const KEEP_ALIVE_INTERVAL_MS = 25_000;
 const CONNECT_TIMEOUT_MS = 60_000;
 const DEFAULT_QUERY_TIMEOUT_MS = 120_000;
@@ -512,7 +513,11 @@ async function startSession(runtime) {
     const { connection, lastDisconnect, qr } = update;
     const closeCode = connection === 'close' ? new Boom(lastDisconnect?.error)?.output?.statusCode : null;
     debugTrace('connection update', { session: runtime.session.session_name, connection: connection || null, close_code: closeCode, qr_received: Boolean(qr) });
-    if (qr) qrcode.generate(qr, { small: true });
+    if (qr) {
+      runtime.lastQr = qr;
+      try { fs.writeFileSync(mobileStatePath, JSON.stringify({status:'qr',session:runtime.session.session_name,qr,updated_at:new Date().toISOString()})); } catch {}
+      qrcode.generate(qr, { small: true });
+    }
     if (connection === 'open') {
       if (runtime.socket !== socket) return;
       runtime.connecting = false;
@@ -522,6 +527,8 @@ async function startSession(runtime) {
       if (runtime.connectWatchdog) clearTimeout(runtime.connectWatchdog);
       runtime.connectWatchdog = null;
       runtime.groupsReady = false;
+      runtime.lastQr = null;
+      try { fs.writeFileSync(mobileStatePath, JSON.stringify({status:'connected',session:runtime.session.session_name,updated_at:new Date().toISOString()})); } catch {}
       debugTrace('WhatsApp connected', { session: runtime.session.session_name });
       try { await ensureGroups(runtime); await flushOutbox(runtime); } catch (error) { log.error(error, 'Initial group/outbox setup failed'); }
       return;
@@ -538,7 +545,11 @@ async function startSession(runtime) {
       runtime.groupsReady = false;
       clearRuntimeTimers(runtime);
       if (!loggedOut) recordDisconnect(runtime, code);
-      if (loggedOut) { debugTrace('WhatsApp logged out', { code, auth_dir: runtime.session.auth_dir || null }); return; }
+      if (loggedOut) {
+        runtime.lastQr = null;
+        try { fs.writeFileSync(mobileStatePath, JSON.stringify({status:'logged_out',session:runtime.session.session_name,updated_at:new Date().toISOString()})); } catch {}
+        debugTrace('WhatsApp logged out', { code, auth_dir: runtime.session.auth_dir || null }); return;
+      }
       scheduleReconnect(runtime, `close_${code || 'unknown'}`);
     }
   });

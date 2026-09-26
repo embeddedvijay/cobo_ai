@@ -35,7 +35,9 @@ const OUTBOX_STABILITY_MS = 10_000;
 const FLAP_WINDOW_MS = 5 * 60_000;
 const CRITICAL_FLAP_COUNT = 5;
 const CRITICAL_SEND_PAUSE_MS = 2 * 60_000;
-const OUTBOX_SEND_GAP_MS = 3_000;
+const OUTBOX_SEND_GAP_MS = 1_100;
+const FINAL_OUTBOX_SEND_GAP_MS = 5_000;
+const FINAL_OUTBOX_KINDS = new Set(["settlement_output_reply", "settlement_group_total", "settlement_input_group_total", "settlement_input_group_message_play"]);
 const DEBUG_RETENTION_DAYS = 7;
 let nextDebugMaintenanceAt = 0;
 function debugDay(value = new Date()) { return value.toISOString().slice(0, 10); }
@@ -387,7 +389,8 @@ async function sendOutbox(runtime, item) {
     debugTrace('Outbox rate pacing', { id: item._id, delay_ms: delayMs });
     await new Promise(resolve => setTimeout(resolve, delayMs));
   }
-  runtime.nextOutboxSendAt = Date.now() + OUTBOX_SEND_GAP_MS;
+  const sendGapMs = FINAL_OUTBOX_KINDS.has(item.kind) ? FINAL_OUTBOX_SEND_GAP_MS : OUTBOX_SEND_GAP_MS;
+  runtime.nextOutboxSendAt = Date.now() + sendGapMs;
   let sent;
   try {
     debugTrace('Outbox WhatsApp send attempt', { id: item._id, target, target_name: runtime.groupNames?.get(target) || item.target, priority: item.priority, text_length: String(item.text || '').length });

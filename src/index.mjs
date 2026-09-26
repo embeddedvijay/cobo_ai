@@ -440,7 +440,12 @@ async function flushOutbox(runtime) {
         whatsappAccepted = true;
         await http.post(`/outbox/${item._id}/delivery`, { target_jid: delivery.target, sent_message: delivery.sent });
         await http.post(`/outbox/${item._id}/result?sent=true`);
-        log.info({ id: item._id, target: delivery.targetName, target_jid: delivery.target, priority: item.priority }, 'Outbox sent');
+        const whatsappMessageId = delivery.sent?.key?.id || null;
+        debugTrace('Outbox delivery confirmed', {
+          id: item._id, kind: item.kind || null, final_stage: item.final_stage || null,
+          target: delivery.target, whatsapp_message_id: whatsappMessageId,
+        });
+        log.info({ id: item._id, kind: item.kind || null, final_stage: item.final_stage || null, target: delivery.targetName, target_jid: delivery.target, whatsapp_message_id: whatsappMessageId, priority: item.priority }, 'Outbox sent');
       } catch (error) {
         const detail = error?.message || String(error);
         if (error?.invalidTarget) {

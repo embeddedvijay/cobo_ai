@@ -500,6 +500,33 @@ class OutputSettlementService:
         queued_details: list[dict] = []
         active_business_date = db.date
         trace(f"[RUN FINAL] start client={client_name} session={session_name} output_jid={output_jid} date={active_business_date} trigger={trigger_message_id}")
+        # Recover only earlier input final messages that are explicitly
+        # uncertain.  Their exact saved text/source ids are retained, so a
+        # successful recovered total settles the same raw rows as the original.
+        recovered_input_finals = 0
+        for prior in db.uncertain_input_group_final_messages(
+            client_name, session_name, active_business_date, limit * 10
+        ):
+            if not db.reserve_input_group_final_recovery(prior["_id"]):
+                continue
+            db.enqueue({
+                "client_name": client_name,
+                "session_name": session_name,
+                "channel": "whatsapp",
+                "target": prior["target"],
+                "text": prior["text"],
+                "quote": None,
+                "kind": prior["kind"],
+                "source_raw_ids": prior.get("source_raw_ids") or [],
+                "dedupe_key": f"input-final-recovery:{prior['_id']}",
+                "priority": int(prior.get("priority", 60)),
+                "business_date": prior["business_date"],
+            })
+            db.mark_input_group_final_recovery_queued(prior["_id"])
+            recovered_input_finals += 1
+            trace(f"[RUN FINAL] recovered uncertain input final outbox_id={prior['_id']} kind={prior.get('kind')} target={prior.get('target')}")
+        counts["recovered_input_finals"] = recovered_input_finals
+
         # A historical missing result must never block today's final message.
         overflow_jids = set()
         for rule in (session.get("contact_rules", {}) or {}).values():
@@ -558,6 +585,52 @@ class OutputSettlementService:
             db.mark_output_settlement_queued(item["_id"], details)
             counts["queued"] += 1
             queued_details.append(details)
+        # Older WhatsApp rate-limit failures left some actual winning quoted
+        # replies in explicit `uncertain` state.  This operator-triggered
+        # recovery queues each such win once with a new dedupe key.  NO WIN
+        # rows have no matches and can never enter this path.
+        recovered = 0
+        for item in db.uncertain_winning_output_replies(
+            client_name, session_name, output_jid, active_business_date, limit
+        ):
+            if not db.reserve_output_win_recovery(item["_id"]):
+                continue
+            details = item.get("settlement_details") or {}
+            matches = details.get("matches") or {}
+            try:
+                reply, _ = self._reply(
+                    str(item["market"]),
+                    {"display": str(details["result"])},
+                    matches,
+                    _amount(details.get("total_play")),
+                    icons,
+                )
+                db.enqueue({
+                    "client_name": client_name,
+                    "session_name": session_name,
+                    "channel": "whatsapp",
+                    "target": output_jid,
+                    "text": reply,
+                    "quote": item.get("delivery_message"),
+                    "kind": "settlement_output_reply",
+                    "reply_to_outbox_id": item["_id"],
+                    "dedupe_key": f"output-settlement-recovery:{item['_id']}",
+                    "priority": 80,
+                    "business_date": item["business_date"],
+                })
+                db.mark_output_win_recovery_queued(item["_id"])
+                recovered += 1
+                trace(f"[RUN FINAL] recovered uncertain winning reply outbox_id={item['_id']} market={item.get('market')}")
+            except (KeyError, TypeError, ValueError) as exc:
+                # Preserve the parent for a later safe Run Final rather than
+                # making a malformed historical row look recovered.
+                db.outbox.update_one(
+                    {"_id": item["_id"]},
+                    {"$set": {"win_recovery_state": "pending", "win_recovery_error": str(exc)}},
+                )
+                trace(f"[RUN FINAL] win recovery skipped outbox_id={item['_id']} error={exc}")
+        counts["recovered_win_replies"] = recovered
+
         # The summary is sent only after every individual quoted reply has been
         # queued, and only when every table had its complete Result document.
         # The trigger WhatsApp id makes a repeated upsert of the same `last`

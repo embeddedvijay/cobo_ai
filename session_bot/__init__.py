@@ -199,6 +199,32 @@ class Session(Reply_processor, Scheduler):
         numbers = "-".join(tokens)
         return f"*{numbers}={amount}₹*"
 
+    @staticmethod
+    def _atomic_forward_table(market: str, bets: dict, total: int) -> str:
+        """Render a universal number=amount table for Instant/Overflow output."""
+        entries = []
+        for raw_key, raw_amount in (bets or {}).items():
+            key = str(raw_key).strip()
+            if not key.isdigit():
+                raise ValueError(f"non-numeric table key: {key!r}")
+            amount = int(raw_amount)
+            if amount <= 0:
+                continue
+            entries.append((key, amount))
+        if not entries:
+            raise ValueError("atomic table has no positive entries")
+        entries.sort(key=lambda item: (len(item[0]), int(item[0]), item[0]))
+        return "\n".join([f"*{market}*", *[f"*{key}={amount}₹*" for key, amount in entries], f"*TOTAL={int(total)}*"])
+
+    def _forward_text_or_grouped_fallback(self, market: str, grouped_rows: list[str], bets: dict, total: int) -> str:
+        """Prefer an unambiguous atomic table; retain the proven grouped output on failure."""
+        grouped = "\n".join([f"*{market}*", *grouped_rows, f"*TOTAL={total}*"])
+        try:
+            return self._atomic_forward_table(market, bets, total)
+        except Exception as exc:
+            trace(f"[FORWARD TABLE] atomic conversion failed; grouped fallback used market={market} error={exc!r}")
+            return grouped
+
     def send_category_overflow(self, contact: str, market: str, result_list: list) -> bool:
         """Instantly route only a 100%-LD group's per-line excess play.
 
@@ -242,7 +268,7 @@ class Session(Reply_processor, Scheduler):
         if total <= 0:
             trace(f"[OVERFLOW] skip contact={contact} reason=no_line_above_limit target={target}")
             return False
-        text = "\n".join([f"*{market}*", *rows, f"*TOTAL={total}*"])
+        text = self._forward_text_or_grouped_fallback(market, rows, bets, total)
         trace(f"[OVERFLOW] queue contact={contact} target={target} total={total} text={text!r}")
         self.send_message_to(
             target,
@@ -284,7 +310,7 @@ class Session(Reply_processor, Scheduler):
             for token in tokens:
                 bets[token] = bets.get(token, 0) + cut
             total += cut * len(tokens)
-        return "\n".join([f"*{market}*", *rows, f"*TOTAL={total}*"]), total, bets
+        return self._forward_text_or_grouped_fallback(market, rows, bets, total), total, bets
 
     def forward_unparsed(self, contact: str, market: str | None, text: str) -> bool:
         # Instant Cutting customers must never receive the raw source message

@@ -770,6 +770,54 @@ class Database:
             }, {"_id": 1}) is not None
         return False
 
+    def final_delivery_status(self, client_name: str, session_name: str, business_date: str, output_jid: str = "") -> dict:
+        """Auditable server-acceptance proof for a Run Final."""
+        final_kinds = {
+            "settlement_output_reply", "settlement_group_total",
+            "settlement_input_group_total", "settlement_input_group_message_play",
+        }
+        query = {
+            "client_name": client_name, "session_name": session_name,
+            "business_date": business_date, "kind": {"$in": list(final_kinds)},
+        }
+        if output_jid:
+            query["target"] = output_jid
+        rows = list(self.outbox.find(query).sort("created_at", ASCENDING))
+        states: dict[str, int] = {}
+        proof = []
+        for row in rows:
+            state = str(row.get("state") or "pending")
+            states[state] = states.get(state, 0) + 1
+            proof.append({
+                "outbox_id": str(row["_id"]),
+                "kind": row.get("kind"),
+                "stage": row.get("final_stage", ""),
+                "target": row.get("target"),
+                "state": state,
+                "whatsapp_message_id": row.get("whatsapp_message_id", ""),
+                "server_accepted_at": row.get("server_accepted_at"),
+                "confirmed_at": row.get("confirmed_at"),
+                "last_error": row.get("last_error", ""),
+            })
+        unsettled_query = {
+            "client_name": client_name, "session_name": session_name,
+            "kind": "legacy_output", "state": "sent",
+            "business_date": business_date,
+            "settlement_state": {"$ne": "sent"},
+        }
+        if output_jid:
+            unsettled_query["delivery_jid"] = output_jid
+        output_tables_waiting = self.outbox.count_documents(unsettled_query)
+        unresolved = sum(count for state, count in states.items() if state != "sent")
+        return {
+            "business_date": business_date,
+            "output_jid": output_jid,
+            "states": states,
+            "output_tables_waiting": output_tables_waiting,
+            "complete": bool(rows) and unresolved == 0 and output_tables_waiting == 0,
+            "proof": proof,
+        }
+
     def claim_outbox(self, client_name: str, session_name: str, limit: int) -> list[dict]:
         claimed = []
         for _ in range(limit):

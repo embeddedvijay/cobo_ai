@@ -172,6 +172,8 @@ class Session(Reply_processor, Scheduler):
         stated value.  This helper deliberately does not collapse a row into
         one game, because the scheduler stores and totals every token.
         """
+        if not isinstance(row, (list, tuple)):
+            return []
         return [str(value).strip() for value in row[:-1] if str(value).strip().isdigit()]
 
     @staticmethod

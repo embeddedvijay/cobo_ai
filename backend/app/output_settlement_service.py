@@ -320,7 +320,7 @@ class OutputSettlementService:
             "final_message": final_message, "message_play": message_play,
         })
 
-    def _queue_input_group_totals(self, client_name: str, session_name: str, trigger_message_id: str, icons: dict, limit: int, business_date: str) -> dict:
+    def _queue_input_group_totals(self, client_name: str, session_name: str, trigger_message_id: str, icons: dict, limit: int, business_date: str, output_jid: str) -> dict:
         """Queue one end-total per input group, based only on that group's plays.
 
         This is a play/stake statement, so it deliberately does not depend on
@@ -383,6 +383,8 @@ class OutputSettlementService:
                 # leave before this input-group total (60).
                 "priority": 60,
                 "business_date": business_date,
+                "final_stage": "input_group_total",
+                "depends_on": {"type": "output_group_total", "output_jid": output_jid, "business_date": business_date},
             })
             # This follows the date-wise final total in the same input group,
             # and makes every accepted message amount auditable at a glance.
@@ -399,6 +401,8 @@ class OutputSettlementService:
                 # before this message-wise expression (59).
                 "priority": 59,
                 "business_date": business_date,
+                "final_stage": "input_group_message_play",
+                "depends_on": {"type": "input_group_total", "business_date": business_date},
             })
             for raw in reserved:
                 db.mark_settlement_queued(raw["_id"], {
@@ -521,6 +525,12 @@ class OutputSettlementService:
                 "dedupe_key": f"input-final-recovery:{prior['_id']}",
                 "priority": int(prior.get("priority", 60)),
                 "business_date": prior["business_date"],
+                "final_stage": "input_final_recovery",
+                "depends_on": (
+                    {"type": "output_group_total", "output_jid": output_jid, "business_date": prior["business_date"]}
+                    if prior["kind"] == "settlement_input_group_total"
+                    else {"type": "input_group_total", "business_date": prior["business_date"]}
+                ),
             })
             db.mark_input_group_final_recovery_queued(prior["_id"])
             recovered_input_finals += 1
@@ -565,6 +575,7 @@ class OutputSettlementService:
             # Output groups receive a quoted reply only for a real win.
             # A no-win table is still settled below, so it cannot block the
             # final total or be processed again on a later Run Final.
+            details["business_date"] = item["business_date"]
             if any(matches.values()):
                 db.enqueue({
                     "client_name": client_name,
@@ -578,11 +589,14 @@ class OutputSettlementService:
                     "dedupe_key": f"output-settlement:{item['_id']}",
                     "priority": 80,
                     "business_date": item["business_date"],
+                    "final_stage": "output_win_reply",
                 })
+                db.mark_output_settlement_queued(item["_id"], details)
             else:
-                trace(f"[RUN FINAL] no-win reply suppressed outbox_id={item['_id']} market={item.get('market')}")
-            details["business_date"] = item["business_date"]
-            db.mark_output_settlement_queued(item["_id"], details)
+                # No WhatsApp reply is intentionally sent, so this parent is
+                # final now and cannot block the group total.
+                db.mark_output_settlement_no_win(item["_id"], details)
+                trace(f"[RUN FINAL] no-win reply suppressed and settled outbox_id={item['_id']} market={item.get('market')}")
             counts["queued"] += 1
             queued_details.append(details)
         # Older WhatsApp rate-limit failures left some actual winning quoted
@@ -658,7 +672,12 @@ class OutputSettlementService:
                 "dedupe_key": f"output-settlement-total:{output_jid}:{active_business_date}",
                 "priority": 70,
                 "business_date": active_business_date,
+                "final_stage": "output_group_total",
+                "depends_on": {"type": "output_wins", "output_jid": output_jid, "business_date": active_business_date},
             })
+            # Also protects a total that was queued by an older build before
+            # the dependency field existed.
+            db.apply_final_dependencies(client_name, session_name, output_jid, active_business_date)
             counts["group_total_queued"] = True
         # Do not move to input groups halfway through this selected output
         # group.  This makes a 20-table final run appear as one uninterrupted
@@ -675,7 +694,7 @@ class OutputSettlementService:
                 f"waiting_result={counts['waiting_result']}"
             )
         else:
-            counts.update(self._queue_input_group_totals(client_name, session_name, trigger_message_id, icons, limit * 10, active_business_date))
+            counts.update(self._queue_input_group_totals(client_name, session_name, trigger_message_id, icons, limit * 10, active_business_date, output_jid))
             counts["input_phase_held"] = False
         trace(f"[RUN FINAL] queued client={client_name} output_jid={output_jid} date={active_business_date} counts={counts}")
         return counts

@@ -580,6 +580,82 @@ class Database:
         }
         return list(self.outbox.find(query).sort("created_at", ASCENDING))
 
+    def uncertain_winning_output_replies(self, client_name: str, session_name: str, output_jid: str, business_date: str, limit: int = 1000) -> list[dict]:
+        """Return only table wins whose quoted WhatsApp reply is explicitly uncertain.
+
+        These rows require an operator-triggered recovery after an old
+        rate-limit/restart.  Empty match maps are NO WIN tables and are
+        deliberately excluded.
+        """
+        parents = self.outbox.find({
+            "client_name": client_name,
+            "session_name": session_name,
+            "kind": "legacy_output",
+            "state": "sent",
+            "delivery_jid": output_jid,
+            "business_date": business_date,
+            "market": {"$regex": r"_(?:OP|CL)$"},
+            "settlement_state": "queued",
+            "settlement_details.matches": {"$exists": True},
+            "win_recovery_state": {"$in": [None, "pending"]},
+        }).sort("created_at", ASCENDING).limit(limit)
+        recoveries = []
+        for parent in parents:
+            details = parent.get("settlement_details") or {}
+            matches = details.get("matches") or {}
+            if not isinstance(matches, dict) or not any(matches.values()):
+                continue
+            uncertain = self.outbox.find_one({
+                "kind": "settlement_output_reply",
+                "reply_to_outbox_id": parent["_id"],
+                "state": "uncertain",
+            })
+            if uncertain:
+                parent["uncertain_reply_id"] = uncertain["_id"]
+                recoveries.append(parent)
+        return recoveries
+
+    def reserve_output_win_recovery(self, outbox_id) -> bool:
+        result = self.outbox.update_one(
+            {
+                "_id": outbox_id,
+                "settlement_state": "queued",
+                "win_recovery_state": {"$in": [None, "pending"]},
+            },
+            {"$set": {"win_recovery_state": "queuing", "win_recovery_queuing_at": datetime.utcnow()}},
+        )
+        return result.modified_count == 1
+
+    def mark_output_win_recovery_queued(self, outbox_id) -> None:
+        self.outbox.update_one(
+            {"_id": outbox_id},
+            {"$set": {"win_recovery_state": "queued", "win_recovery_queued_at": datetime.utcnow()}},
+        )
+
+    def uncertain_input_group_final_messages(self, client_name: str, session_name: str, business_date: str, limit: int = 1000) -> list[dict]:
+        """Input final rows that were attempted but have no delivery confirmation."""
+        return list(self.outbox.find({
+            "client_name": client_name,
+            "session_name": session_name,
+            "business_date": business_date,
+            "kind": {"$in": ["settlement_input_group_total", "settlement_input_group_message_play"]},
+            "state": "uncertain",
+            "input_recovery_state": {"$in": [None, "pending"]},
+        }).sort("created_at", ASCENDING).limit(limit))
+
+    def reserve_input_group_final_recovery(self, outbox_id) -> bool:
+        result = self.outbox.update_one(
+            {"_id": outbox_id, "state": "uncertain", "input_recovery_state": {"$in": [None, "pending"]}},
+            {"$set": {"input_recovery_state": "queuing", "input_recovery_queuing_at": datetime.utcnow()}},
+        )
+        return result.modified_count == 1
+
+    def mark_input_group_final_recovery_queued(self, outbox_id) -> None:
+        self.outbox.update_one(
+            {"_id": outbox_id},
+            {"$set": {"input_recovery_state": "queued", "input_recovery_queued_at": datetime.utcnow()}},
+        )
+
     def reserve_output_settlement(self, outbox_id) -> bool:
         result = self.outbox.update_one(
             {"_id": outbox_id, "settlement_state": {"$in": [None, "pending"]}},

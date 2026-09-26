@@ -175,6 +175,16 @@ class Session(Reply_processor, Scheduler):
         return [str(value).strip() for value in row[:-1] if str(value).strip().isdigit()]
 
     @staticmethod
+    def _forward_sort_key(row) -> tuple:
+        """Order forwarded rows: Ank 0-9, then Jodi 00-99, then Panna 000-999."""
+        tokens = Session._number_tokens(row)
+        ordered = tuple(sorted(
+            ((len(token), int(token), token) for token in tokens),
+            key=lambda item: (item[0], item[1], item[2]),
+        ))
+        return ordered or ((99, 0, ""),)
+
+    @staticmethod
     def _forward_table_row(row, amount: int) -> str:
         """Render an LD/overflow row clearly without changing its stored bet key.
 
@@ -183,7 +193,8 @@ class Session(Reply_processor, Scheduler):
         shown with ``-`` and the amount gets the rupee marker.  Callers keep
         their original ``=``-joined key for settlement payloads and DB logic.
         """
-        numbers = "-".join(str(part).strip() for part in row[:-1])
+        tokens = sorted(Session._number_tokens(row), key=lambda token: (len(token), int(token), token))
+        numbers = "-".join(tokens)
         return f"*{numbers}={amount}₹*"
 
     def send_category_overflow(self, contact: str, market: str, result_list: list) -> bool:
@@ -206,7 +217,7 @@ class Session(Reply_processor, Scheduler):
             trace(f"[OVERFLOW] skip contact={contact} reason=no_output_group settings={settings!r}")
             return False
         rows, bets, total = [], {}, 0
-        for row in result_list or []:
+        for row in sorted(result_list or [], key=self._forward_sort_key):
             if not isinstance(row, (list, tuple)) or len(row) < 2:
                 continue
             kind = self._play_kind(row)
@@ -251,7 +262,7 @@ class Session(Reply_processor, Scheduler):
         except (TypeError, ValueError):
             rate = 100
         rows, bets, total = [], {}, 0
-        for row in result_list or []:
+        for row in sorted(result_list or [], key=self._forward_sort_key):
             if not isinstance(row, (list, tuple)) or len(row) < 2:
                 continue
             try:

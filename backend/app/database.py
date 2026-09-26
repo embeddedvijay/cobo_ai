@@ -92,6 +92,22 @@ class Database:
             {"state": "sending", "send_attempted_at": {"$exists": False}},
             {"$set": {"state": "retry", "recovered_after_restart": datetime.utcnow()}},
         )
+        # WhatsApp's explicit rate-overlimit response means the message was
+        # rejected before acceptance. It is safe to retry after the cool-down;
+        # treating it as unknown/uncertain would silently strand final wins.
+        self.outbox.update_many(
+            {
+                "state": "uncertain",
+                "last_error": {"$regex": r"rate[- ]?(?:overlimit|limit)", "$options": "i"},
+            },
+            {"$set": {
+                "state": "retry",
+                "next_attempt_at": datetime.utcnow() + timedelta(seconds=120),
+                "send_attempted_at": None,
+                "last_error": "WhatsApp rate-limit rejected; scheduled safe retry",
+                "recovered_rate_limit_at": datetime.utcnow(),
+            }},
+        )
 
     def capture_raw(self, document: dict) -> tuple[dict, bool]:
         """Idempotent insert: duplicate Baileys upserts never make duplicate replies."""

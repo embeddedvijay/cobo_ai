@@ -183,24 +183,10 @@ class Reply_processor:
             data["Message"] = text
             data["Message_ID"] = message_id
 
-            # This legacy source has a special raw forwarding rule, but its
-            # destination must always come from the same saved Director config
-            # as every other customer.  The former hard-coded "All_game"
-            # target was not a configured WhatsApp group, so Baileys could
-            # never resolve a JID and silently skipped delivery.
-            if contact == "Ansh_PANA":
-                target = self.director_target(contact, market, "fast_forward")
-                if target:
-                    data["Forwarded"] = True
-                    data["Forward_target"] = target
-                    self.send_message_to(target, text, market=market, priority=70)
-                    trace(f"[LEGACY RAW ROUTE] sent contact={contact} market={market} target={target!r}")
-                else:
-                    data["Forwarded"] = False
-                    data["Forward_error"] = "no_configured_fast_forward_target"
-                    trace(f"[LEGACY RAW ROUTE] blocked contact={contact} market={market} reason=no_configured_fast_forward_target")
-                add_data(data)
-                return '',0
+            # All input groups, including Ansh_PANA, must use the common
+            # parse -> acknowledgement -> Instant/Scheduled/Overflow flow.
+            # Never short-circuit an input into a raw output message here:
+            # Instant customers require only a calculated LD-cut table.
 
             if self.client_name == "seth" and any(x in market for x in ['_OP','_CL']) :
                 pass

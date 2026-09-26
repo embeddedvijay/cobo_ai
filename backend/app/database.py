@@ -549,7 +549,11 @@ class Database:
             "kind": "legacy_output",
             "state": "sent",
             "delivery_jid": output_jid,
-            "market": {"$nin": [None, ""]},
+            # A Run Final table must always identify a concrete OP/CL market.
+            # This excludes old/raw fast-forward messages (for example
+            # market="TIME_BAZAR") from being treated as settlement tables
+            # merely because they were sent to a configured Overflow output.
+            "market": {"$regex": r"_(?:OP|CL)$"},
             "delivery_message": {"$exists": True},
             "settlement_state": {"$in": [None, "pending"]},
         }

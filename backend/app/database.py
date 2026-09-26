@@ -505,9 +505,16 @@ class Database:
 
     def mark_outbox_delivery(self, message_id: str, target_jid: str, sent_message: dict) -> None:
         from bson import ObjectId
+        message_key = (sent_message or {}).get("key", {}) if isinstance(sent_message, dict) else {}
         self.outbox.update_one(
             {"_id": ObjectId(message_id)},
-            {"$set": {"delivery_jid": target_jid, "delivery_message": sent_message, "delivered_at": datetime.utcnow()}},
+            {"$set": {
+                "delivery_jid": target_jid,
+                "delivery_message": sent_message,
+                "whatsapp_message_id": str(message_key.get("id") or ""),
+                "server_accepted_at": datetime.utcnow(),
+                "delivered_at": datetime.utcnow(),
+            }},
         )
 
     def mark_outbox_send_attempt(self, message_id: str) -> bool:
@@ -672,20 +679,104 @@ class Database:
             {"$set": {"settlement_state": "queued", "settlement_details": details, "settlement_queued_at": datetime.utcnow()}},
         )
 
+    def mark_output_settlement_no_win(self, outbox_id, details: dict) -> None:
+        """A no-win table has no WhatsApp reply, but is still finalised."""
+        self.outbox.update_one(
+            {"_id": outbox_id},
+            {"$set": {
+                "settlement_state": "sent",
+                "settlement_details": details,
+                "settlement_no_win": True,
+                "settlement_sent_at": datetime.utcnow(),
+            }},
+        )
+
+    def apply_final_dependencies(self, client_name: str, session_name: str, output_jid: str, business_date: str) -> None:
+        """Hold later final stages until their predecessor is server-confirmed."""
+        output_dependency = {"type": "output_wins", "output_jid": output_jid, "business_date": business_date}
+        self.outbox.update_many(
+            {
+                "client_name": client_name, "session_name": session_name,
+                "target": output_jid, "business_date": business_date,
+                "kind": "settlement_group_total", "state": {"$in": ["pending", "retry"]},
+            },
+            {"$set": {"depends_on": output_dependency}},
+        )
+        self.outbox.update_many(
+            {
+                "client_name": client_name, "session_name": session_name,
+                "business_date": business_date,
+                "kind": "settlement_input_group_total", "state": {"$in": ["pending", "retry"]},
+            },
+            {"$set": {"depends_on": {"type": "output_group_total", "output_jid": output_jid, "business_date": business_date}}},
+        )
+        self.outbox.update_many(
+            {
+                "client_name": client_name, "session_name": session_name,
+                "business_date": business_date,
+                "kind": "settlement_input_group_message_play", "state": {"$in": ["pending", "retry"]},
+            },
+            {"$set": {"depends_on": {"type": "input_group_total", "business_date": business_date}}},
+        )
+
+    def _outbox_dependency_ready(self, item: dict) -> bool:
+        dependency = item.get("depends_on") or {}
+        kind = dependency.get("type")
+        if not kind:
+            return True
+        client_name, session_name = item.get("client_name"), item.get("session_name")
+        business_date = dependency.get("business_date") or item.get("business_date")
+        if kind == "output_wins":
+            blocker = self.outbox.find_one({
+                "client_name": client_name, "session_name": session_name,
+                "kind": "legacy_output", "state": "sent",
+                "delivery_jid": dependency.get("output_jid"),
+                "business_date": business_date,
+                "settlement_state": {"$ne": "sent"},
+            }, {"_id": 1})
+            return blocker is None
+        if kind == "output_group_total":
+            return self.outbox.find_one({
+                "client_name": client_name, "session_name": session_name,
+                "target": dependency.get("output_jid"), "business_date": business_date,
+                "kind": "settlement_group_total", "state": "sent",
+            }, {"_id": 1}) is not None
+        if kind == "input_group_total":
+            return self.outbox.find_one({
+                "client_name": client_name, "session_name": session_name,
+                "target": item.get("target"), "business_date": business_date,
+                "kind": "settlement_input_group_total", "state": "sent",
+            }, {"_id": 1}) is not None
+        return False
+
     def claim_outbox(self, client_name: str, session_name: str, limit: int) -> list[dict]:
         claimed = []
         for _ in range(limit):
-            item = self.outbox.find_one_and_update(
-                {"client_name": client_name, "session_name": session_name, "state": {"$in": ["pending", "retry"]}, "next_attempt_at": {"$lte": datetime.utcnow()}},
-                {"$set": {"state": "sending", "claimed_at": datetime.utcnow()}, "$inc": {"attempts": 1}},
-                sort=[("priority", -1), ("created_at", ASCENDING)], return_document=ReturnDocument.AFTER,
-            )
+            candidates = list(self.outbox.find(
+                {
+                    "client_name": client_name, "session_name": session_name,
+                    "state": {"$in": ["pending", "retry"]},
+                    "next_attempt_at": {"$lte": datetime.utcnow()},
+                }
+            ).sort([("priority", -1), ("created_at", ASCENDING)]).limit(250))
+            item = None
+            for candidate in candidates:
+                if not self._outbox_dependency_ready(candidate):
+                    self.outbox.update_one(
+                        {"_id": candidate["_id"], "state": {"$in": ["pending", "retry"]}},
+                        {"$set": {"blocked_by_dependency": candidate.get("depends_on"), "blocked_at": datetime.utcnow()}},
+                    )
+                    continue
+                item = self.outbox.find_one_and_update(
+                    {"_id": candidate["_id"], "state": {"$in": ["pending", "retry"]}},
+                    {"$set": {"state": "sending", "claimed_at": datetime.utcnow(), "blocked_by_dependency": None}, "$inc": {"attempts": 1}},
+                    return_document=ReturnDocument.AFTER,
+                )
+                if item:
+                    break
             if not item:
                 break
             item["_id"] = str(item["_id"])
-            # Node only needs the outbox id. raw_id is retained in MongoDB for
-            # delivery bookkeeping, but must never leak as a BSON ObjectId in
-            # the JSON response to Baileys.
             if item.get("raw_id") is not None:
                 item["raw_id"] = str(item["raw_id"])
             claimed.append(item)
@@ -696,6 +787,8 @@ class Database:
         item = self.outbox.find_one({"_id": ObjectId(message_id)})
         state = "sent" if sent else "retry"
         payload = {"state": state, "last_error": error, "updated_at": datetime.utcnow()}
+        if sent:
+            payload["confirmed_at"] = datetime.utcnow()
         if not sent:
             # Exponential backoff avoids a disconnected WhatsApp session causing
             # a tight retry loop. Cap is five minutes.

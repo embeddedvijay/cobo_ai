@@ -425,7 +425,9 @@ async function flushOutbox(runtime) {
   }
   runtime.flushing = true;
   try {
-    const { data } = await http.post(`/outbox/claim?client_name=${encodeURIComponent(runtime.client.client_name)}&session_name=${encodeURIComponent(runtime.session.session_name)}&limit=50`);
+    // Claim exactly one item. If WhatsApp rate-limits this account, no later
+    // final/win item can be stranded in an in-progress batch.
+    const { data } = await http.post(`/outbox/claim?client_name=${encodeURIComponent(runtime.client.client_name)}&session_name=${encodeURIComponent(runtime.session.session_name)}&limit=1`);
     for (const item of data.items || []) {
       let whatsappAccepted = false;
       try {

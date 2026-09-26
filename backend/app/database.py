@@ -691,6 +691,27 @@ class Database:
             }},
         )
 
+    def uncertain_output_group_totals(self, client_name: str, session_name: str, output_jid: str, business_date: str) -> list[dict]:
+        return list(self.outbox.find({
+            "client_name": client_name, "session_name": session_name,
+            "target": output_jid, "business_date": business_date,
+            "kind": "settlement_group_total", "state": "uncertain",
+            "group_total_recovery_state": {"$in": [None, "pending"]},
+        }).sort("created_at", ASCENDING))
+
+    def reserve_output_group_total_recovery(self, outbox_id) -> bool:
+        result = self.outbox.update_one(
+            {"_id": outbox_id, "state": "uncertain", "group_total_recovery_state": {"$in": [None, "pending"]}},
+            {"$set": {"group_total_recovery_state": "queuing", "group_total_recovery_queuing_at": datetime.utcnow()}},
+        )
+        return result.modified_count == 1
+
+    def mark_output_group_total_recovery_queued(self, outbox_id) -> None:
+        self.outbox.update_one(
+            {"_id": outbox_id},
+            {"$set": {"group_total_recovery_state": "queued", "group_total_recovery_queued_at": datetime.utcnow()}},
+        )
+
     def apply_final_dependencies(self, client_name: str, session_name: str, output_jid: str, business_date: str) -> None:
         """Hold later final stages until their predecessor is server-confirmed."""
         output_dependency = {"type": "output_wins", "output_jid": output_jid, "business_date": business_date}

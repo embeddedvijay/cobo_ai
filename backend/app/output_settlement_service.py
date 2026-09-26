@@ -645,6 +645,33 @@ class OutputSettlementService:
                 trace(f"[RUN FINAL] win recovery skipped outbox_id={item['_id']} error={exc}")
         counts["recovered_win_replies"] = recovered
 
+        # Recover a previous group total only after all the above winning
+        # tables become confirmed. Its dependency prevents a partial final.
+        recovered_group_totals = 0
+        for prior in db.uncertain_output_group_totals(
+            client_name, session_name, output_jid, active_business_date
+        ):
+            if not db.reserve_output_group_total_recovery(prior["_id"]):
+                continue
+            db.enqueue({
+                "client_name": client_name,
+                "session_name": session_name,
+                "channel": "whatsapp",
+                "target": output_jid,
+                "text": prior["text"],
+                "quote": None,
+                "kind": "settlement_group_total",
+                "dedupe_key": f"output-group-total-recovery:{prior['_id']}",
+                "priority": 70,
+                "business_date": prior["business_date"],
+                "final_stage": "output_group_total_recovery",
+                "depends_on": {"type": "output_wins", "output_jid": output_jid, "business_date": prior["business_date"]},
+            })
+            db.mark_output_group_total_recovery_queued(prior["_id"])
+            recovered_group_totals += 1
+            trace(f"[RUN FINAL] recovered uncertain output total outbox_id={prior['_id']} target={output_jid}")
+        counts["recovered_group_totals"] = recovered_group_totals
+
         # The summary is sent only after every individual quoted reply has been
         # queued, and only when every table had its complete Result document.
         # The trigger WhatsApp id makes a repeated upsert of the same `last`
